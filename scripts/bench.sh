@@ -1,7 +1,16 @@
 #!/bin/bash
 set -uoe pipefail
 
-FILES=(series.csv blogs.csv articles.csv mediapart.tsv numbers.csv random.csv range.csv)
+FILES=(
+  series.csv
+  blogs.csv
+  articles.csv
+  mediapart.tsv
+  numbers.csv
+  random.csv
+  range.csv
+  worst-case.csv
+)
 
 # Building
 cargo build --release --example count
