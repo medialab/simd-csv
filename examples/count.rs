@@ -8,13 +8,22 @@ use simd_csv::BufferedReader;
 struct Args {
     /// Path to target CSV file
     path: String,
+
     /// Whether to enable SIMD acceleration
     #[arg(long)]
     simd: bool,
+
+    // Whether to split the record using quasi-zero-copy methods
+    #[arg(long)]
+    split: bool,
 }
 
 fn main() -> csv::Result<()> {
     let args = Args::parse();
+
+    if !args.simd && args.split {
+        panic!("--split only works with --simd!");
+    }
 
     let delimiter = if args.path.ends_with(".tsv") {
         b'\t'
@@ -43,7 +52,17 @@ fn main() -> csv::Result<()> {
             b'"',
         );
 
-        println!("{}", reader.count_records()?);
+        if args.split {
+            let mut count: u64 = 0;
+
+            while let Some(_) = reader.split_record()? {
+                count += 1;
+            }
+
+            println!("{}", count);
+        } else {
+            println!("{}", reader.count_records()?);
+        }
     }
 
     Ok(())

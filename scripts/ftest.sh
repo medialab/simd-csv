@@ -22,8 +22,9 @@ do
 
   echo $file
 
-  $PROG $path
-  $PROG --simd $path
+  echo `$PROG $path` -- baseline
+  echo `$PROG --simd $path` -- simd
+  echo `$PROG --simd --split $path` -- splits
 
   echo
 done

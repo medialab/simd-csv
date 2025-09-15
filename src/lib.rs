@@ -38,7 +38,6 @@ impl Reader {
         }
     }
 
-    // TODO: try to simplify in loop later (use iterator or test next quote right away)
     fn split_record(&mut self, input: &[u8]) -> (ReadResult, usize) {
         use ReadState::*;
 
@@ -117,9 +116,11 @@ impl Reader {
 }
 
 // TODO: mmap variant can work on a total slice, maybe rename?
-// TODO: see when we integrate sleep
+// TODO: see when we integrate split
 pub struct BufferedReader<R> {
     buffer: BufReader<R>,
+    scratch: Vec<u8>,
+    actual_buffer_position: Option<usize>,
     inner: Reader,
 }
 
@@ -127,6 +128,8 @@ impl<R: Read> BufferedReader<R> {
     pub fn with_capacity(reader: R, capacity: usize, delimiter: u8, quote: u8) -> Self {
         Self {
             buffer: BufReader::with_capacity(capacity, reader),
+            scratch: Vec::with_capacity(capacity),
+            actual_buffer_position: None,
             inner: Reader::new(delimiter, quote),
         }
     }
@@ -153,6 +156,47 @@ impl<R: Read> BufferedReader<R> {
         }
 
         Ok(count)
+    }
+
+    pub fn split_record(&mut self) -> Result<Option<&[u8]>> {
+        use ReadResult::*;
+
+        self.scratch.clear();
+
+        if let Some(last_pos) = self.actual_buffer_position.take() {
+            self.buffer.consume(last_pos);
+        }
+
+        loop {
+            let input = self.buffer.fill_buf()?;
+
+            let (result, pos) = self.inner.split_record(&input);
+
+            match result {
+                End => {
+                    self.buffer.consume(pos);
+                    return Ok(None);
+                }
+                Cr | Lf => {
+                    self.buffer.consume(pos);
+                }
+                InputEmpty => {
+                    self.scratch.extend(&input[..pos]);
+                    self.buffer.consume(pos);
+                }
+                Record => {
+                    if self.scratch.is_empty() {
+                        self.actual_buffer_position = Some(pos);
+                        return Ok(Some(&self.buffer.buffer()[..pos]));
+                    } else {
+                        self.scratch.extend(&input[..pos]);
+                        self.buffer.consume(pos);
+
+                        return Ok(Some(&self.scratch));
+                    }
+                }
+            };
+        }
     }
 }
 
