@@ -25,6 +25,7 @@ do
   echo `$PROG $path` -- baseline
   echo `$PROG --simd $path` -- simd
   echo `$PROG --simd --split $path` -- splits
+  echo `$PROG --mmap $path` -- mmap
 
   echo
 done

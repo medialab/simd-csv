@@ -115,8 +115,6 @@ impl Reader {
     }
 }
 
-// TODO: mmap variant can work on a total slice, maybe rename?
-// TODO: see when we integrate split
 pub struct BufferedReader<R> {
     buffer: BufReader<R>,
     scratch: Vec<u8>,
@@ -170,7 +168,7 @@ impl<R: Read> BufferedReader<R> {
         loop {
             let input = self.buffer.fill_buf()?;
 
-            let (result, pos) = self.inner.split_record(&input);
+            let (result, pos) = self.inner.split_record(input);
 
             match result {
                 End => {
@@ -197,6 +195,43 @@ impl<R: Read> BufferedReader<R> {
                 }
             };
         }
+    }
+}
+
+// NOTE: a reader to be used when the whole data fits into memory or when using
+// memory maps.
+pub struct TotalReader {
+    inner: Reader,
+}
+
+impl TotalReader {
+    pub fn new(delimiter: u8, quote: u8) -> Self {
+        Self {
+            inner: Reader::new(delimiter, quote),
+        }
+    }
+
+    pub fn count_records(&mut self, bytes: &[u8]) -> u64 {
+        use ReadResult::*;
+
+        let mut i: usize = 0;
+        let mut count: u64 = 0;
+
+        loop {
+            let (result, pos) = self.inner.split_record(&bytes[i..]);
+
+            i += pos;
+
+            match result {
+                End => break,
+                InputEmpty | Cr | Lf => continue,
+                Record => {
+                    count += 1;
+                }
+            };
+        }
+
+        count
     }
 }
 
