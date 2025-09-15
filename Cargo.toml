@@ -1,0 +1,16 @@
+[package]
+name = "simd-csv"
+version = "0.1.0"
+edition = "2021"
+authors = [
+  "Guillaume Plique <guillaume.plique@sciencespo.fr>"
+]
+description = "Specialized Rust CSV parser relying on SIMD instructions."
+documentation = "https://github.com/medialab/simd-csv#readme"
+homepage = "https://github.com/medialab/simd-csv"
+repository = "https://github.com/medialab/simd-csv"
+readme = "README.md"
+keywords = ["csv", "tsv", "simd"]
+license = "MIT"
+
+[dependencies]
