@@ -13,4 +13,8 @@ readme = "README.md"
 keywords = ["csv", "tsv", "simd"]
 license = "MIT"
 
+[lib]
+doctest = false
+
 [dependencies]
+memchr = "2.7.5"

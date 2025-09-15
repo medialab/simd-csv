@@ -1,14 +1,216 @@
-pub fn add(left: u64, right: u64) -> u64 {
-    left + right
+use std::io::{BufRead, BufReader, Read, Result};
+
+use memchr::{memchr, memchr2};
+
+#[derive(Debug)]
+enum ReadResult {
+    InputEmpty,
+    Cr,
+    Lf,
+    Record,
+    End,
+}
+
+#[derive(Debug)]
+enum ReadState {
+    Unquoted,
+    Quoted,
+    Quote,
+}
+
+// NOTE: funnily enough, knowing the delimiter is not required to split the records,
+// but since we expose a single unified `struct` here, it is simpler to include it.
+struct Reader {
+    _delimiter: u8,
+    quote: u8,
+    state: ReadState,
+    record_was_read: bool,
+}
+
+impl Reader {
+    fn new(delimiter: u8, quote: u8) -> Self {
+        Self {
+            _delimiter: delimiter,
+            quote,
+            state: ReadState::Unquoted,
+            // Must be true at the beginning to avoid counting one record for empty input
+            record_was_read: true,
+        }
+    }
+
+    // TODO: try to simplify in loop later (use iterator or test next quote right away)
+    fn split_record(&mut self, input: &[u8]) -> (ReadResult, usize) {
+        use ReadState::*;
+
+        if input.is_empty() {
+            if !self.record_was_read {
+                self.record_was_read = true;
+                return (ReadResult::Record, 0);
+            }
+
+            return (ReadResult::End, 0);
+        }
+
+        if self.record_was_read {
+            if input[0] == b'\n' {
+                return (ReadResult::Lf, 1);
+            } else if input[0] == b'\r' {
+                return (ReadResult::Cr, 1);
+            }
+        }
+
+        self.record_was_read = false;
+
+        let mut pos: usize = 0;
+
+        while pos < input.len() {
+            match self.state {
+                Unquoted => {
+                    // Here we are moving to next quote or end of line
+                    if let Some(offset) = memchr2(b'\n', self.quote, &input[pos..]) {
+                        pos += offset;
+
+                        let byte = input[pos];
+
+                        pos += 1;
+
+                        if byte == b'\n' {
+                            self.record_was_read = true;
+                            return (ReadResult::Record, pos);
+                        }
+
+                        // Here, `byte` is guaranteed to be a quote
+                        self.state = Quoted;
+                    } else {
+                        break;
+                    }
+                }
+                Quoted => {
+                    // Here we moving to next quote
+                    if let Some(offset) = memchr(self.quote, &input[pos..]) {
+                        pos += offset + 1;
+                        self.state = Quote;
+                    } else {
+                        break;
+                    }
+                }
+                Quote => {
+                    let byte = input[pos];
+
+                    pos += 1;
+
+                    if byte == self.quote {
+                        self.state = Quoted;
+                    } else if byte == b'\n' {
+                        self.record_was_read = true;
+                        self.state = Unquoted;
+                        return (ReadResult::Record, pos);
+                    } else {
+                        self.state = Unquoted;
+                    }
+                }
+            }
+        }
+
+        (ReadResult::InputEmpty, input.len())
+    }
+}
+
+// TODO: mmap variant can work on a total slice, maybe rename?
+// TODO: see when we integrate sleep
+pub struct BufferedReader<R> {
+    buffer: BufReader<R>,
+    inner: Reader,
+}
+
+impl<R: Read> BufferedReader<R> {
+    pub fn with_capacity(reader: R, capacity: usize, delimiter: u8, quote: u8) -> Self {
+        Self {
+            buffer: BufReader::with_capacity(capacity, reader),
+            inner: Reader::new(delimiter, quote),
+        }
+    }
+
+    pub fn count_records(&mut self) -> Result<u64> {
+        use ReadResult::*;
+
+        let mut count: u64 = 0;
+
+        loop {
+            let input = self.buffer.fill_buf()?;
+
+            let (result, pos) = self.inner.split_record(input);
+
+            self.buffer.consume(pos);
+
+            match result {
+                End => break,
+                InputEmpty | Cr | Lf => continue,
+                Record => {
+                    count += 1;
+                }
+            };
+        }
+
+        Ok(count)
+    }
 }
 
 #[cfg(test)]
 mod tests {
+    use std::io::Cursor;
+
     use super::*;
 
+    fn count_records(data: &str, capacity: usize) -> u64 {
+        let mut splitter = BufferedReader::with_capacity(Cursor::new(data), capacity, b',', b'"');
+        splitter.count_records().unwrap()
+    }
+
     #[test]
-    fn it_works() {
-        let result = add(2, 2);
-        assert_eq!(result, 4);
+    fn test_count() {
+        // Empty
+        assert_eq!(count_records("", 1024), 0);
+
+        // Single cells with various empty lines
+        let tests = vec![
+            "name\njohn\nlucy",
+            "name\njohn\nlucy\n",
+            "name\n\njohn\r\nlucy\n",
+            "name\n\njohn\r\nlucy\n\n",
+            "name\n\n\njohn\r\n\r\nlucy\n\n\n",
+            "\nname\njohn\nlucy",
+            "\n\nname\njohn\nlucy",
+            "\r\n\r\nname\njohn\nlucy",
+            "name\njohn\nlucy\r\n",
+            "name\njohn\nlucy\r\n\r\n",
+        ];
+
+        for capacity in [32usize, 4, 3, 2, 1] {
+            for test in tests.iter() {
+                assert_eq!(
+                    count_records(test, capacity),
+                    3,
+                    "capacity={} string={:?}",
+                    capacity,
+                    test
+                );
+            }
+        }
+
+        // Multiple cells
+        let data = "name,surname,age\njohn,landy,45\nlucy,rose,67";
+        assert_eq!(count_records(data, 1024), 3);
+
+        // Quoting
+        for capacity in [1024usize, 32usize, 4, 3, 2, 1] {
+            let data = "name,surname,age\n\"john\",\"landy, the \"\"everlasting\"\" bastard\",45\nlucy,rose,\"67\"\njermaine,jackson,\"89\"\n\nkarine,loucan,\"52\"\r\n";
+
+            assert_eq!(count_records(data, capacity), 5, "capacity={}", capacity);
+        }
+
+        // Different separator
+        let data = "name\tsurname\tage\njohn\tlandy\t45\nlucy\trose\t67";
+        assert_eq!(count_records(data, 1024), 3);
     }
 }
