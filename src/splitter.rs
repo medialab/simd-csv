@@ -38,8 +38,6 @@ mod tests {
 
     #[test]
     fn test_scalar_splitter() {
-        dbg!(super::simd_features_enabled());
-
         fn split(haystack: &[u8]) -> Vec<usize> {
             let searcher = Three::new(b',', b'"', b'\n');
             searcher.iter(haystack).collect()
