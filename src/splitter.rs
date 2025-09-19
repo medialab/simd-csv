@@ -1,32 +1,3 @@
-pub fn simd_features_enabled() -> &'static str {
-    #[cfg(target_arch = "x86_64")]
-    {
-        if is_x86_feature_detected!("avx2") {
-            "avx2"
-        } else {
-            "sse2"
-        }
-    }
-    #[cfg(all(target_arch = "wasm32", target_feature = "simd128"))]
-    {
-        "simd128"
-    }
-
-    #[cfg(target_arch = "aarch64")]
-    {
-        "neon"
-    }
-
-    #[cfg(not(any(
-        target_arch = "x86_64",
-        all(target_arch = "wasm32", target_feature = "simd128"),
-        target_arch = "aarch64"
-    )))]
-    {
-        "none"
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use memchr::arch::all::memchr::Three;
@@ -54,5 +25,11 @@ mod tests {
 
         // Exactly 64
         assert_eq!(split("b,".repeat(64).as_bytes()).len(), 64);
+
+        // Less than 32
+        assert_eq!(split("b,".repeat(25).as_bytes()).len(), 25);
+
+        // Less than 16
+        assert_eq!(split("b,".repeat(13).as_bytes()).len(), 13);
     }
 }
