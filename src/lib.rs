@@ -4,6 +4,8 @@ use memchr::{memchr, memchr2};
 
 mod splitter;
 
+pub use splitter::simd_features_enabled;
+
 #[derive(Debug)]
 enum ReadResult {
     InputEmpty,
