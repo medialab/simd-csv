@@ -2,6 +2,8 @@ use std::io::{BufRead, BufReader, Read, Result};
 
 use memchr::{memchr, memchr2};
 
+mod splitter;
+
 #[derive(Debug)]
 enum ReadResult {
     InputEmpty,
