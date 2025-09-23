@@ -175,7 +175,7 @@ mod aarch64 {
     use super::Pointer;
 
     #[inline(always)]
-    fn neon_movemask(v: uint8x16_t) -> u64 {
+    unsafe fn neon_movemask(v: uint8x16_t) -> u64 {
         let asu16s = vreinterpretq_u16_u8(v);
         let mask = vshrn_n_u16(asu16s, 4);
         let asu64 = vreinterpret_u64_u8(mask);
@@ -223,9 +223,9 @@ mod aarch64 {
                 n1,
                 n2,
                 n3,
-                v1: vdupq_n_u8(n1 as i8),
-                v2: vdupq_n_u8(n2 as i8),
-                v3: vdupq_n_u8(n3 as i8),
+                v1: vdupq_n_u8(n1),
+                v2: vdupq_n_u8(n2),
+                v3: vdupq_n_u8(n3),
             }
         }
 
@@ -396,7 +396,7 @@ pub struct Indices<'s, 'h> {
     inner: x86_64::SSE2Indices<'s, 'h>,
 
     #[cfg(target_arch = "aarch64")]
-    inner: aarch64::SSE2Indices<'s, 'h>,
+    inner: aarch64::NeonIndices<'s, 'h>,
 
     #[cfg(not(any(target_arch = "x86_64", target_arch = "aarch64")))]
     inner: memchr::arch::all::memchr::ThreeIter<'s, 'h>,
