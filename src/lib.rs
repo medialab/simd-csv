@@ -2,7 +2,7 @@ use std::io::{BufRead, BufReader, Read, Result};
 
 use memchr::{memchr, memchr2};
 
-mod splitter;
+mod searcher;
 
 #[derive(Debug)]
 enum ReadResult {
