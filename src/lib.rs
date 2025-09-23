@@ -4,6 +4,8 @@ use memchr::{memchr, memchr2};
 
 mod searcher;
 
+pub use searcher::Searcher;
+
 #[derive(Debug)]
 enum ReadResult {
     InputEmpty,

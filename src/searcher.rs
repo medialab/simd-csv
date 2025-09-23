@@ -1,5 +1,250 @@
+/// A trait for adding some helper routines to pointers.
+pub(crate) trait Pointer {
+    /// Returns the distance, in units of `T`, between `self` and `origin`.
+    ///
+    /// # Safety
+    ///
+    /// Same as `ptr::offset_from` in addition to `self >= origin`.
+    unsafe fn distance(self, origin: Self) -> usize;
+}
+
+impl<T> Pointer for *const T {
+    unsafe fn distance(self, origin: *const T) -> usize {
+        // TODO: Replace with `ptr::sub_ptr` once stabilized.
+        usize::try_from(self.offset_from(origin)).unwrap_unchecked()
+    }
+}
+
+#[inline(always)]
+fn get_for_offset(mask: u32) -> u32 {
+    #[cfg(target_endian = "big")]
+    {
+        mask.swap_bytes()
+    }
+    #[cfg(target_endian = "little")]
+    {
+        mask
+    }
+}
+
+#[inline(always)]
+fn first_offset(mask: u32) -> usize {
+    get_for_offset(mask).trailing_zeros() as usize
+}
+
+#[inline(always)]
+fn clear_least_significant_bit(mask: u32) -> u32 {
+    mask & (mask - 1)
+}
+
+#[cfg(target_arch = "x86_64")]
+mod x86_64 {
+    use core::arch::x86_64::{
+        __m128i, _mm_cmpeq_epi8, _mm_loadu_si128, _mm_movemask_epi8, _mm_or_si128, _mm_set1_epi8,
+    };
+    use std::marker::PhantomData;
+
+    use super::{clear_least_significant_bit, first_offset, Pointer};
+
+    #[derive(Debug)]
+    pub struct SSE2Searcher {
+        n1: u8,
+        n2: u8,
+        n3: u8,
+        v1: __m128i,
+        v2: __m128i,
+        v3: __m128i,
+    }
+
+    impl SSE2Searcher {
+        #[inline]
+        pub unsafe fn new(n1: u8, n2: u8, n3: u8) -> Self {
+            Self {
+                n1,
+                n2,
+                n3,
+                v1: _mm_set1_epi8(n1 as i8),
+                v2: _mm_set1_epi8(n2 as i8),
+                v3: _mm_set1_epi8(n3 as i8),
+            }
+        }
+
+        #[inline(always)]
+        pub fn iter<'s, 'h>(&'s self, haystack: &'h [u8]) -> SSE2Indices<'s, 'h> {
+            SSE2Indices::new(self, haystack)
+        }
+    }
+
+    #[derive(Debug)]
+    pub struct SSE2Indices<'s, 'h> {
+        searcher: &'s SSE2Searcher,
+        haystack: PhantomData<&'h [u8]>,
+        start: *const u8,
+        end: *const u8,
+        current: *const u8,
+        mask: u32,
+    }
+
+    impl<'s, 'h> SSE2Indices<'s, 'h> {
+        #[inline]
+        fn new(searcher: &'s SSE2Searcher, haystack: &'h [u8]) -> Self {
+            let ptr = haystack.as_ptr();
+
+            Self {
+                searcher,
+                haystack: PhantomData,
+                start: ptr,
+                end: ptr.wrapping_add(haystack.len()),
+                current: ptr,
+                mask: 0,
+            }
+        }
+    }
+
+    const SSE2_STEP: usize = 16;
+
+    impl<'s, 'h> SSE2Indices<'s, 'h> {
+        pub unsafe fn next(&mut self) -> Option<usize> {
+            if self.start >= self.end {
+                return None;
+            }
+
+            let mut mask = self.mask;
+            let vectorized_end = self.end.sub(SSE2_STEP);
+            let mut current = self.current;
+            let start = self.start;
+            let v1 = self.searcher.v1;
+            let v2 = self.searcher.v2;
+            let v3 = self.searcher.v3;
+
+            'main: loop {
+                // Processing current move mask
+                if mask != 0 {
+                    let offset = current.sub(SSE2_STEP).add(first_offset(mask));
+                    self.mask = clear_least_significant_bit(mask);
+                    self.current = current;
+
+                    return Some(offset.distance(start));
+                }
+
+                // Main loop of unaligned loads
+                while current <= vectorized_end {
+                    let chunk = _mm_loadu_si128(current as *const __m128i);
+                    let cmp1 = _mm_cmpeq_epi8(chunk, v1);
+                    let cmp2 = _mm_cmpeq_epi8(chunk, v2);
+                    let cmp3 = _mm_cmpeq_epi8(chunk, v3);
+                    let cmp = _mm_or_si128(cmp1, cmp2);
+                    let cmp = _mm_or_si128(cmp, cmp3);
+
+                    mask = _mm_movemask_epi8(cmp) as u32;
+
+                    current = current.add(SSE2_STEP);
+
+                    if mask != 0 {
+                        continue 'main;
+                    }
+                }
+
+                // Processing remaining bytes linearly
+                while current < self.end {
+                    if *current == self.searcher.n1
+                        || *current == self.searcher.n2
+                        || *current == self.searcher.n3
+                    {
+                        let offset = current.distance(start);
+                        self.current = current.add(1);
+                        return Some(offset);
+                    }
+                    current = current.add(1);
+                }
+
+                return None;
+            }
+        }
+    }
+}
+
+// #[cfg(target_arch = "aarch64")]
+// mod aarch64 {
+//     pub struct NeonSearcher {}
+// }
+
+#[derive(Debug)]
+pub struct Searcher {
+    #[cfg(target_arch = "x86_64")]
+    inner: x86_64::SSE2Searcher,
+
+    // #[cfg(target_arch = "aarch64")]
+    // inner: aarch64::NeonSearcher,
+    #[cfg(not(any(target_arch = "x86_64", target_arch = "aarch64")))]
+    inner: memchr::arch::all::memchr::Three,
+}
+
+impl Searcher {
+    #[inline(always)]
+    #[cfg(target_arch = "x86_64")]
+    pub fn new(n1: u8, n2: u8, n3: u8) -> Self {
+        unsafe {
+            Self {
+                inner: x86_64::SSE2Searcher::new(n1, n2, n3),
+            }
+        }
+    }
+
+    #[inline(always)]
+    #[cfg(not(any(target_arch = "x86_64", target_arch = "aarch64")))]
+    pub fn new(n1: u8, n2: u8, n3: u8) -> Self {
+        Self {
+            inner: memchr::arch::all::memchr::Three::new(n1, n2, n3),
+        }
+    }
+
+    #[inline(always)]
+    #[cfg(target_arch = "x86_64")]
+    pub fn search<'s, 'h>(&'s self, haystack: &'h [u8]) -> Indices<'s, 'h> {
+        Indices {
+            inner: self.inner.iter(haystack),
+        }
+    }
+
+    #[inline(always)]
+    #[cfg(not(any(target_arch = "x86_64", target_arch = "aarch64")))]
+    pub fn search<'s, 'h>(&'s self, haystack: &'h [u8]) -> Indices<'s, 'h> {
+        Indices {
+            inner: self.inner.iter(haystack),
+        }
+    }
+}
+
+#[derive(Debug)]
+pub struct Indices<'s, 'h> {
+    #[cfg(target_arch = "x86_64")]
+    inner: x86_64::SSE2Indices<'s, 'h>,
+
+    #[cfg(not(any(target_arch = "x86_64", target_arch = "aarch64")))]
+    inner: memchr::arch::all::memchr::ThreeIter<'s, 'h>,
+}
+
+impl<'s, 'h> Iterator for Indices<'s, 'h> {
+    type Item = usize;
+
+    #[inline(always)]
+    #[cfg(target_arch = "x86_64")]
+    fn next(&mut self) -> Option<Self::Item> {
+        unsafe { self.inner.next() }
+    }
+
+    #[inline(always)]
+    #[cfg(not(any(target_arch = "x86_64", target_arch = "aarch64")))]
+    fn next(&mut self) -> Option<Self::Item> {
+        self.inner.next()
+    }
+}
+
 #[cfg(test)]
 mod tests {
+    use super::*;
+
     use memchr::arch::all::memchr::Three;
 
     static TEST_STRING: &[u8]  = b"name,\"surname\",age,color,oper\n,\n,\nation,punctuation\nname,surname,age,color,operation,punctuation";
@@ -12,6 +257,32 @@ mod tests {
         fn split(haystack: &[u8]) -> Vec<usize> {
             let searcher = Three::new(b',', b'"', b'\n');
             searcher.iter(haystack).collect()
+        }
+
+        let offsets = split(TEST_STRING);
+        assert_eq!(offsets, TEST_STRING_OFFSETS);
+
+        // Not found at all
+        assert!(split("b".repeat(75).as_bytes()).is_empty());
+
+        // Regular
+        assert_eq!(split("b,".repeat(75).as_bytes()).len(), 75);
+
+        // Exactly 64
+        assert_eq!(split("b,".repeat(64).as_bytes()).len(), 64);
+
+        // Less than 32
+        assert_eq!(split("b,".repeat(25).as_bytes()).len(), 25);
+
+        // Less than 16
+        assert_eq!(split("b,".repeat(13).as_bytes()).len(), 13);
+    }
+
+    #[test]
+    fn test_searcher() {
+        fn split(haystack: &[u8]) -> Vec<usize> {
+            let searcher = Searcher::new(b',', b'"', b'\n');
+            searcher.search(haystack).collect()
         }
 
         let offsets = split(TEST_STRING);
