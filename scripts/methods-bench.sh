@@ -23,3 +23,7 @@ echo
 echo Mmap
 time $PROG mmap $1
 echo
+
+echo Zero-copy
+time $PROG zero-copy $1
+echo

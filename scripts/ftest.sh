@@ -26,6 +26,7 @@ do
   echo `$PROG simd $path` -- simd
   echo `$PROG split $path` -- splits
   echo `$PROG mmap $path` -- mmap
+  echo `$PROG zero-copy $path` -- zero-copy
 
   echo
 done

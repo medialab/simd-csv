@@ -11,6 +11,7 @@ enum CountingMode {
     Simd,
     Split,
     Mmap,
+    ZeroCopy,
 }
 
 #[derive(Parser, Debug)]
@@ -88,6 +89,17 @@ fn main() -> csv::Result<()> {
             let mut reader = TotalReader::new(args.delimiter(), b'"');
 
             println!("{}", reader.count_records(&map));
+        }
+        CountingMode::ZeroCopy => {
+            let mut reader = args.simd_buffered_reader()?;
+
+            let mut count: u64 = 0;
+
+            while let Some(_) = reader.read_zero_copy_record()? {
+                count += 1;
+            }
+
+            println!("{}", count);
         }
     }
 
