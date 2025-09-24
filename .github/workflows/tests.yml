@@ -29,5 +29,5 @@ jobs:
           rustup --version
       - name: Tests
         run: |
-          cargo run --example=instructions --target ${{ matrix.target }}
+          cargo run -q --example=instructions --target ${{ matrix.target }}
           cargo test --target ${{ matrix.target }}
