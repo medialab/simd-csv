@@ -1,5 +1,5 @@
 /// A trait for adding some helper routines to pointers.
-pub(crate) trait Pointer {
+trait Pointer {
     /// Returns the distance, in units of `T`, between `self` and `origin`.
     ///
     /// # Safety

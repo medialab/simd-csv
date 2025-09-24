@@ -26,7 +26,8 @@ do
   hyperfine \
     --warmup 1 \
     "$PROG baseline $path" \
-    "$PROG simd $path"
+    "$PROG simd $path" \
+    "$PROG zero-copy $path"
 
   printf %"$(tput cols)"s | tr " " "-"
   echo
