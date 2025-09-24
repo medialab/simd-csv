@@ -8,18 +8,22 @@ pub struct ZeroCopyRecord<'a> {
 }
 
 impl<'a> ZeroCopyRecord<'a> {
+    #[inline]
     pub fn new(slice: &'a [u8], seps: &'a [usize]) -> Self {
         Self { slice, seps }
     }
 
+    #[inline]
     pub fn len(&self) -> usize {
         self.seps.len() + 1
     }
 
+    #[inline]
     pub fn is_empty(&self) -> bool {
         self.len() == 0
     }
 
+    #[inline]
     pub fn iter(&self) -> ZeroCopyRecordIter<'_> {
         ZeroCopyRecordIter {
             record: self,
@@ -56,7 +60,7 @@ impl<'a> Iterator for ZeroCopyRecordIter<'a> {
 
         // Terminal flush
         if self.current_sep_index == self.record.seps.len() {
-            let slice = &self.record.slice[self.offset..].trim_ascii_end();
+            let slice = &self.record.slice[self.offset..];
             self.current_sep_index += 1;
 
             return Some(slice);

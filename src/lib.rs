@@ -123,6 +123,7 @@ impl Reader {
         (ReadResult::InputEmpty, input.len())
     }
 
+    // TODO: try to have a single iterator call wrapping the state machine logic
     fn split_record_and_find_separators(
         &mut self,
         input: &[u8],
@@ -337,11 +338,11 @@ impl<R: Read> BufferedReader<R> {
                     if self.scratch.is_empty() {
                         self.actual_buffer_position = Some(pos);
                         return Ok(Some(ZeroCopyRecord::new(
-                            &self.buffer.buffer()[..pos],
+                            self.buffer.buffer()[..pos].trim_ascii_end(),
                             &self.seps,
                         )));
                     } else {
-                        self.scratch.extend(&input[..pos]);
+                        self.scratch.extend(input[..pos].trim_ascii_end());
                         self.buffer.consume(pos);
 
                         return Ok(Some(ZeroCopyRecord::new(&self.scratch, &self.seps)));
