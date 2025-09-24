@@ -337,55 +337,72 @@ pub struct Searcher {
 }
 
 impl Searcher {
+    pub fn leveraged_simd_instructions() -> &'static str {
+        #[cfg(target_arch = "x86_64")]
+        {
+            "sse2"
+        }
+
+        #[cfg(target_arch = "aarch64")]
+        {
+            "neon"
+        }
+
+        #[cfg(not(any(target_arch = "x86_64", target_arch = "aarch64")))]
+        {
+            "none"
+        }
+    }
+
     #[inline(always)]
-    #[cfg(target_arch = "x86_64")]
     pub fn new(n1: u8, n2: u8, n3: u8) -> Self {
-        unsafe {
+        #[cfg(target_arch = "x86_64")]
+        {
+            unsafe {
+                Self {
+                    inner: x86_64::SSE2Searcher::new(n1, n2, n3),
+                }
+            }
+        }
+
+        #[cfg(target_arch = "aarch64")]
+        {
+            unsafe {
+                Self {
+                    inner: aarch64::NeonSearcher::new(n1, n2, n3),
+                }
+            }
+        }
+
+        #[cfg(not(any(target_arch = "x86_64", target_arch = "aarch64")))]
+        {
             Self {
-                inner: x86_64::SSE2Searcher::new(n1, n2, n3),
+                inner: memchr::arch::all::memchr::Three::new(n1, n2, n3),
             }
         }
     }
 
     #[inline(always)]
-    #[cfg(target_arch = "aarch64")]
-    pub fn new(n1: u8, n2: u8, n3: u8) -> Self {
-        unsafe {
-            Self {
-                inner: aarch64::NeonSearcher::new(n1, n2, n3),
+    pub fn search<'s, 'h>(&'s self, haystack: &'h [u8]) -> Indices<'s, 'h> {
+        #[cfg(target_arch = "x86_64")]
+        {
+            Indices {
+                inner: self.inner.iter(haystack),
             }
         }
-    }
 
-    #[inline(always)]
-    #[cfg(not(any(target_arch = "x86_64", target_arch = "aarch64")))]
-    pub fn new(n1: u8, n2: u8, n3: u8) -> Self {
-        Self {
-            inner: memchr::arch::all::memchr::Three::new(n1, n2, n3),
+        #[cfg(target_arch = "aarch64")]
+        {
+            Indices {
+                inner: self.inner.iter(haystack),
+            }
         }
-    }
 
-    #[inline(always)]
-    #[cfg(target_arch = "x86_64")]
-    pub fn search<'s, 'h>(&'s self, haystack: &'h [u8]) -> Indices<'s, 'h> {
-        Indices {
-            inner: self.inner.iter(haystack),
-        }
-    }
-
-    #[inline(always)]
-    #[cfg(target_arch = "aarch64")]
-    pub fn search<'s, 'h>(&'s self, haystack: &'h [u8]) -> Indices<'s, 'h> {
-        Indices {
-            inner: self.inner.iter(haystack),
-        }
-    }
-
-    #[inline(always)]
-    #[cfg(not(any(target_arch = "x86_64", target_arch = "aarch64")))]
-    pub fn search<'s, 'h>(&'s self, haystack: &'h [u8]) -> Indices<'s, 'h> {
-        Indices {
-            inner: self.inner.iter(haystack),
+        #[cfg(not(any(target_arch = "x86_64", target_arch = "aarch64")))]
+        {
+            Indices {
+                inner: self.inner.iter(haystack),
+            }
         }
     }
 }
@@ -406,21 +423,21 @@ impl<'s, 'h> Iterator for Indices<'s, 'h> {
     type Item = usize;
 
     #[inline(always)]
-    #[cfg(target_arch = "x86_64")]
     fn next(&mut self) -> Option<Self::Item> {
-        unsafe { self.inner.next() }
-    }
+        #[cfg(target_arch = "x86_64")]
+        {
+            unsafe { self.inner.next() }
+        }
 
-    #[inline(always)]
-    #[cfg(target_arch = "aarch64")]
-    fn next(&mut self) -> Option<Self::Item> {
-        unsafe { self.inner.next() }
-    }
+        #[cfg(target_arch = "aarch64")]
+        {
+            unsafe { self.inner.next() }
+        }
 
-    #[inline(always)]
-    #[cfg(not(any(target_arch = "x86_64", target_arch = "aarch64")))]
-    fn next(&mut self) -> Option<Self::Item> {
-        self.inner.next()
+        #[cfg(not(any(target_arch = "x86_64", target_arch = "aarch64")))]
+        {
+            self.inner.next()
+        }
     }
 }
 

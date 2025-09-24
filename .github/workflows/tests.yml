@@ -28,4 +28,6 @@ jobs:
           echo After override
           rustup --version
       - name: Tests
-        run: cargo test --target ${{ matrix.target }}
+        run: |
+          cargo run --example=instructions --target ${{ matrix.target }}
+          cargo test --target ${{ matrix.target }}
