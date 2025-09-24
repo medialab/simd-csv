@@ -502,5 +502,21 @@ mod tests {
 
         // Less than 16
         assert_eq!(split("b,".repeat(13).as_bytes()).len(), 13);
+
+        // Complex input
+        let complex = b"name,surname,age\n\"john\",\"landy, the \"\"everlasting\"\" bastard\",45\nlucy,rose,\"67\"\njermaine,jackson,\"89\"\n\nkarine,loucan,\"52\"\nrose,\"glib\",12\n\"guillaume\",\"plique\",\"42\"\r\n";
+        let complex_indices = split(complex);
+
+        assert!(complex_indices
+            .iter()
+            .copied()
+            .all(|c| complex[c] == b',' || complex[c] == b'\n' || complex[c] == b'"'));
+
+        assert_eq!(
+            complex_indices,
+            Three::new(b',', b'\n', b'"')
+                .iter(complex)
+                .collect::<Vec<_>>()
+        );
     }
 }

@@ -2,8 +2,11 @@ use std::io::{BufRead, BufReader, Read, Result};
 
 use memchr::{memchr, memchr2};
 
+mod debug;
+mod records;
 mod searcher;
 
+pub use records::ZeroCopyRecord;
 pub use searcher::Searcher;
 
 #[derive(Debug)]
@@ -25,20 +28,22 @@ enum ReadState {
 // NOTE: funnily enough, knowing the delimiter is not required to split the records,
 // but since we expose a single unified `struct` here, it is simpler to include it.
 struct Reader {
-    _delimiter: u8,
+    delimiter: u8,
     quote: u8,
     state: ReadState,
     record_was_read: bool,
+    searcher: Searcher,
 }
 
 impl Reader {
     fn new(delimiter: u8, quote: u8) -> Self {
         Self {
-            _delimiter: delimiter,
+            delimiter,
             quote,
             state: ReadState::Unquoted,
             // Must be true at the beginning to avoid counting one record for empty input
             record_was_read: true,
+            searcher: Searcher::new(delimiter, b'\n', quote),
         }
     }
 
@@ -117,11 +122,106 @@ impl Reader {
 
         (ReadResult::InputEmpty, input.len())
     }
+
+    fn split_record_and_find_separators(
+        &mut self,
+        input: &[u8],
+        seps_offset: usize,
+        seps: &mut Vec<usize>,
+    ) -> (ReadResult, usize) {
+        use ReadState::*;
+
+        if input.is_empty() {
+            if !self.record_was_read {
+                self.record_was_read = true;
+                return (ReadResult::Record, 0);
+            }
+
+            return (ReadResult::End, 0);
+        }
+
+        if self.record_was_read {
+            if input[0] == b'\n' {
+                return (ReadResult::Lf, 1);
+            } else if input[0] == b'\r' {
+                return (ReadResult::Cr, 1);
+            }
+        }
+
+        self.record_was_read = false;
+
+        let mut pos: usize = 0;
+
+        while pos < input.len() {
+            match self.state {
+                Unquoted => {
+                    // Here we are moving to next quote or end of line
+                    let mut last_offset: Option<usize> = None;
+
+                    for offset in self.searcher.search(&input[pos..]) {
+                        last_offset = Some(offset);
+
+                        let byte = input[pos + offset];
+
+                        if byte == self.delimiter {
+                            seps.push(seps_offset + pos + offset);
+                            continue;
+                        }
+
+                        if byte == b'\n' {
+                            self.record_was_read = true;
+                            return (ReadResult::Record, pos + offset + 1);
+                        }
+
+                        // Here, `byte` is guaranteed to be a quote
+                        self.state = Quoted;
+                        break;
+                    }
+
+                    if let Some(offset) = last_offset {
+                        pos += offset + 1;
+                    } else {
+                        break;
+                    }
+                }
+                Quoted => {
+                    // Here we moving to next quote
+                    if let Some(offset) = memchr(self.quote, &input[pos..]) {
+                        pos += offset + 1;
+                        self.state = Quote;
+                    } else {
+                        break;
+                    }
+                }
+                Quote => {
+                    let byte = input[pos];
+
+                    pos += 1;
+
+                    if byte == self.quote {
+                        self.state = Quoted;
+                    } else if byte == self.delimiter {
+                        seps.push(seps_offset + pos - 1);
+                        self.state = Unquoted;
+                    } else if byte == b'\n' {
+                        self.record_was_read = true;
+                        self.state = Unquoted;
+                        return (ReadResult::Record, pos);
+                    } else {
+                        self.state = Unquoted;
+                    }
+                }
+            }
+        }
+
+        (ReadResult::InputEmpty, input.len())
+    }
 }
 
 pub struct BufferedReader<R> {
     buffer: BufReader<R>,
     scratch: Vec<u8>,
+    seps: Vec<usize>,
     actual_buffer_position: Option<usize>,
     inner: Reader,
 }
@@ -131,6 +231,7 @@ impl<R: Read> BufferedReader<R> {
         Self {
             buffer: BufReader::with_capacity(capacity, reader),
             scratch: Vec::with_capacity(capacity),
+            seps: Vec::new(),
             actual_buffer_position: None,
             inner: Reader::new(delimiter, quote),
         }
@@ -195,6 +296,55 @@ impl<R: Read> BufferedReader<R> {
                         self.buffer.consume(pos);
 
                         return Ok(Some(&self.scratch));
+                    }
+                }
+            };
+        }
+    }
+
+    pub fn read_zero_copy_record(&mut self) -> Result<Option<ZeroCopyRecord<'_>>> {
+        use ReadResult::*;
+
+        self.scratch.clear();
+        self.seps.clear();
+
+        if let Some(last_pos) = self.actual_buffer_position.take() {
+            self.buffer.consume(last_pos);
+        }
+
+        loop {
+            let input = self.buffer.fill_buf()?;
+
+            let (result, pos) = self.inner.split_record_and_find_separators(
+                input,
+                self.scratch.len(),
+                &mut self.seps,
+            );
+
+            match result {
+                End => {
+                    self.buffer.consume(pos);
+                    return Ok(None);
+                }
+                Cr | Lf => {
+                    self.buffer.consume(pos);
+                }
+                InputEmpty => {
+                    self.scratch.extend(&input[..pos]);
+                    self.buffer.consume(pos);
+                }
+                Record => {
+                    if self.scratch.is_empty() {
+                        self.actual_buffer_position = Some(pos);
+                        return Ok(Some(ZeroCopyRecord::new(
+                            &self.buffer.buffer()[..pos],
+                            &self.seps,
+                        )));
+                    } else {
+                        self.scratch.extend(&input[..pos]);
+                        self.buffer.consume(pos);
+
+                        return Ok(Some(ZeroCopyRecord::new(&self.scratch, &self.seps)));
                     }
                 }
             };
@@ -295,5 +445,43 @@ mod tests {
         // Different separator
         let data = "name\tsurname\tage\njohn\tlandy\t45\nlucy\trose\t67";
         assert_eq!(count_records(data, 1024), 3);
+    }
+
+    #[test]
+    fn test_read_zero_copy_record() -> Result<()> {
+        let csv = "name,surname,age\n\"john\",\"landy, the \"\"everlasting\"\" bastard\",45\nlucy,rose,\"67\"\njermaine,jackson,\"89\"\n\nkarine,loucan,\"52\"\nrose,\"glib\",12\n\"guillaume\",\"plique\",\"42\"\r\n";
+
+        let mut reader = BufferedReader::with_capacity(Cursor::new(csv), 32, b',', b'"');
+        let mut records = Vec::new();
+
+        let expected = vec![
+            vec!["name", "surname", "age"],
+            vec![
+                "\"john\"",
+                "\"landy, the \"\"everlasting\"\" bastard\"",
+                "45",
+            ],
+            vec!["lucy", "rose", "\"67\""],
+            vec!["jermaine", "jackson", "\"89\""],
+            vec!["karine", "loucan", "\"52\""],
+            vec!["rose", "\"glib\"", "12"],
+            vec!["\"guillaume\"", "\"plique\"", "\"42\""],
+        ]
+        .into_iter()
+        .map(|record| {
+            record
+                .into_iter()
+                .map(|cell| cell.as_bytes().to_vec())
+                .collect::<Vec<_>>()
+        })
+        .collect::<Vec<_>>();
+
+        while let Some(record) = reader.read_zero_copy_record()? {
+            records.push(record.iter().map(|cell| cell.to_vec()).collect::<Vec<_>>());
+        }
+
+        assert_eq!(records, expected);
+
+        Ok(())
     }
 }
