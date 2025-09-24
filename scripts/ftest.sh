@@ -10,6 +10,7 @@ FILES=(
   random.csv
   range.csv
   worst-case.csv
+  ndjson-scam.csv
 )
 
 # Building
