@@ -9,17 +9,17 @@ PROG=target/release/examples/count
 cat $1 > /dev/null
 
 echo Baseline
-time $PROG $1
+time $PROG baseline $1
 echo
 
 echo SIMD
-time $PROG --simd $1
+time $PROG simd $1
 echo
 
 echo Split
-time $PROG --simd --split $1
+time $PROG split $1
 echo
 
 echo Mmap
-time $PROG --mmap $1
+time $PROG mmap $1
 echo
