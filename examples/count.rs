@@ -22,6 +22,10 @@ struct Args {
 
     /// Path to target CSV file
     path: String,
+
+    /// Check alignment (i.e. whether all rows have same number of columns)
+    #[arg(short, long)]
+    check_alignment: bool,
 }
 
 impl Args {
@@ -94,8 +98,23 @@ fn main() -> csv::Result<()> {
             let mut reader = args.simd_buffered_reader()?;
 
             let mut count: u64 = 0;
+            let mut alignment: Option<usize> = None;
 
-            while let Some(_) = reader.read_zero_copy_record()? {
+            while let Some(record) = reader.read_zero_copy_record()? {
+                if args.check_alignment {
+                    match alignment {
+                        None => {
+                            alignment = Some(record.len());
+                        }
+                        Some(expected) => {
+                            if record.len() != expected {
+                                eprintln!("Alignement error!");
+                                std::process::exit(1);
+                            }
+                        }
+                    }
+                }
+
                 count += 1;
             }
 
