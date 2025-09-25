@@ -38,7 +38,7 @@ do
   echo `$INTEGRITY $path | md5sum` baseline reader checksum
   echo `$INTEGRITY --simd $path | md5sum` simd reader checksum
   echo `cat $path | md5sum` baseline passthrough checksum
-  echo `$PASSTHROUGH $path | md5sum` simd passthrough checksum
+  echo `$PASSTHROUGH --simd $path | md5sum` simd passthrough checksum
 
   echo
 done
