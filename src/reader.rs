@@ -548,6 +548,8 @@ impl TotalReader {
 mod tests {
     use std::io::Cursor;
 
+    use crate::brec;
+
     use super::*;
 
     fn count_records(data: &str, capacity: usize) -> u64 {
@@ -638,18 +640,6 @@ mod tests {
         assert_eq!(records, expected);
 
         Ok(())
-    }
-
-    macro_rules! brec {
-        ($($x: expr),*) => {{
-            let mut r = ByteRecord::new();
-
-            $(
-                r.push_field($x.as_bytes());
-            )*
-
-            r
-        }};
     }
 
     #[test]

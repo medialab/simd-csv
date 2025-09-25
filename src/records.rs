@@ -176,6 +176,19 @@ impl<'a> Iterator for ByteRecordIter<'a> {
     }
 }
 
+#[macro_export]
+macro_rules! brec {
+    ($($x: expr),*) => {{
+        let mut r = ByteRecord::new();
+
+        $(
+            r.push_field($x.as_bytes());
+        )*
+
+        r
+    }};
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
