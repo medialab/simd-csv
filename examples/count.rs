@@ -1,9 +1,7 @@
 use std::fs::File;
 
 use clap::{Parser, ValueEnum};
-use csv::{ByteRecord, ReaderBuilder};
 use memmap2::Mmap;
-use simd_csv::{BufferedReader, TotalReader};
 
 #[derive(Debug, ValueEnum, Clone)]
 enum CountingMode {
@@ -12,6 +10,7 @@ enum CountingMode {
     Split,
     Mmap,
     ZeroCopy,
+    Copy,
 }
 
 #[derive(Parser, Debug)]
@@ -37,8 +36,8 @@ impl Args {
         }
     }
 
-    fn simd_buffered_reader(&self) -> csv::Result<BufferedReader<File>> {
-        Ok(BufferedReader::with_capacity(
+    fn simd_buffered_reader(&self) -> csv::Result<simd_csv::BufferedReader<File>> {
+        Ok(simd_csv::BufferedReader::with_capacity(
             File::open(&self.path)?,
             BUFFERED_READER_DEFAULT_CAPACITY,
             self.delimiter(),
@@ -54,14 +53,14 @@ fn main() -> csv::Result<()> {
 
     match args.mode {
         CountingMode::Baseline => {
-            let mut reader_builder = ReaderBuilder::new();
+            let mut reader_builder = csv::ReaderBuilder::new();
             reader_builder
                 .has_headers(false)
                 .delimiter(args.delimiter());
             let mut reader = reader_builder.from_path(&args.path)?;
 
             let mut count: u64 = 0;
-            let mut record = ByteRecord::new();
+            let mut record = csv::ByteRecord::new();
 
             while reader.read_byte_record(&mut record)? {
                 count += 1;
@@ -90,7 +89,7 @@ fn main() -> csv::Result<()> {
 
             let map = unsafe { Mmap::map(&file).unwrap() };
 
-            let mut reader = TotalReader::new(args.delimiter(), b'"');
+            let mut reader = simd_csv::TotalReader::new(args.delimiter(), b'"');
 
             println!("{}", reader.count_records(&map));
         }
@@ -115,6 +114,18 @@ fn main() -> csv::Result<()> {
                     }
                 }
 
+                count += 1;
+            }
+
+            println!("{}", count);
+        }
+        CountingMode::Copy => {
+            let mut reader = args.simd_buffered_reader()?;
+            let mut record = simd_csv::ByteRecord::new();
+
+            let mut count: u64 = 0;
+
+            while reader.read_byte_record(&mut record)? {
                 count += 1;
             }
 

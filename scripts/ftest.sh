@@ -15,7 +15,9 @@ FILES=(
 
 # Building
 cargo build --release --example count
-PROG=target/release/examples/count
+cargo build --release --example integrity
+COUNT=target/release/examples/count
+INTEGRITY=target/release/examples/integrity
 
 for file in ${FILES[@]};
 do
@@ -23,11 +25,15 @@ do
 
   echo $file
 
-  echo `$PROG baseline $path` -- baseline
-  echo `$PROG simd $path` -- simd
-  echo `$PROG split $path` -- splits
-  echo `$PROG mmap $path` -- mmap
-  echo `$PROG zero-copy --check-alignment $path` -- zero-copy
+  echo `$COUNT baseline $path` -- baseline
+  echo `$COUNT simd $path` -- simd
+  echo `$COUNT split $path` -- splits
+  echo `$COUNT mmap $path` -- mmap
+  echo `$COUNT zero-copy --check-alignment $path` -- zero-copy
+  echo `$COUNT copy $path` -- copy
+
+  echo `$INTEGRITY $path | md5sum`
+  echo `$INTEGRITY --simd $path | md5sum`
 
   echo
 done

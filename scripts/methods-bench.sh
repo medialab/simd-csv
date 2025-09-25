@@ -27,3 +27,7 @@ echo
 echo Zero-copy
 time $PROG zero-copy $1
 echo
+
+echo Copy
+time $PROG copy $1
+echo
