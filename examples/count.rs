@@ -100,7 +100,7 @@ fn main() -> csv::Result<()> {
             let mut count: u64 = 0;
             let mut alignment: Option<usize> = None;
 
-            while let Some(record) = reader.read_zero_copy_record()? {
+            while let Some(record) = reader.read_zero_copy_byte_record()? {
                 if args.check_alignment {
                     match alignment {
                         None => {

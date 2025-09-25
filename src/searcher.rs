@@ -447,7 +447,7 @@ mod tests {
 
     use memchr::arch::all::memchr::Three;
 
-    static TEST_STRING: &[u8]  = b"name,\"surname\",age,color,oper\n,\n,\nation,punctuation\nname,surname,age,color,operation,punctuation";
+    static TEST_STRING: &[u8] = b"name,\"surname\",age,color,oper\n,\n,\nation,punctuation\nname,surname,age,color,operation,punctuation";
     static TEST_STRING_OFFSETS: &[usize; 18] = &[
         4, 5, 13, 14, 18, 24, 29, 30, 31, 32, 33, 39, 51, 56, 64, 68, 74, 84,
     ];

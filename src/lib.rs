@@ -6,7 +6,7 @@ mod debug;
 mod records;
 mod searcher;
 
-pub use records::ZeroCopyRecord;
+pub use records::{ByteRecord, ZeroCopyByteRecord};
 pub use searcher::Searcher;
 
 #[derive(Debug)]
@@ -217,6 +217,108 @@ impl Reader {
 
         (ReadResult::InputEmpty, input.len())
     }
+
+    fn read_record(&mut self, input: &[u8], record: &mut ByteRecord) -> (ReadResult, usize) {
+        use ReadState::*;
+
+        if input.is_empty() {
+            if !self.record_was_read {
+                self.record_was_read = true;
+                record.finalize_field();
+                return (ReadResult::Record, 0);
+            }
+
+            return (ReadResult::End, 0);
+        }
+
+        if self.record_was_read {
+            if input[0] == b'\n' {
+                return (ReadResult::Lf, 1);
+            } else if input[0] == b'\r' {
+                return (ReadResult::Cr, 1);
+            }
+        }
+
+        self.record_was_read = false;
+
+        let mut pos: usize = 0;
+
+        while pos < input.len() {
+            match self.state {
+                Unquoted => {
+                    // Here we are moving to next quote or end of line
+                    let mut last_offset: Option<usize> = None;
+
+                    for offset in self.searcher.search(&input[pos..]) {
+                        if let Some(o) = last_offset {
+                            record.extend_from_slice(&input[pos + o + 1..pos + offset]);
+                        } else {
+                            record.extend_from_slice(&input[pos..pos + offset]);
+                        }
+
+                        last_offset = Some(offset);
+
+                        let byte = input[pos + offset];
+
+                        if byte == self.delimiter {
+                            record.finalize_field();
+                            continue;
+                        }
+
+                        if byte == b'\n' {
+                            record.finalize_field();
+                            self.record_was_read = true;
+                            return (ReadResult::Record, pos + offset + 1);
+                        }
+
+                        // Here, `byte` is guaranteed to be a quote
+                        self.state = Quoted;
+                        break;
+                    }
+
+                    if let Some(offset) = last_offset {
+                        pos += offset + 1;
+                    } else {
+                        break;
+                    }
+                }
+                Quoted => {
+                    // Here we moving to next quote
+                    if let Some(offset) = memchr(self.quote, &input[pos..]) {
+                        record.extend_from_slice(&input[pos..pos + offset]);
+                        pos += offset + 1;
+                        self.state = Quote;
+                    } else {
+                        break;
+                    }
+                }
+                Quote => {
+                    let byte = input[pos];
+
+                    pos += 1;
+
+                    if byte == self.quote {
+                        self.state = Quoted;
+                        record.push_byte(byte);
+                    } else if byte == self.delimiter {
+                        record.finalize_field();
+                        self.state = Unquoted;
+                    } else if byte == b'\n' {
+                        self.record_was_read = true;
+                        self.state = Unquoted;
+                        record.finalize_field();
+                        return (ReadResult::Record, pos);
+                    } else {
+                        self.state = Unquoted;
+                    }
+                }
+            }
+        }
+
+        record.extend_from_slice(&input[pos..]);
+
+        (ReadResult::InputEmpty, input.len())
+    }
 }
 
 pub struct BufferedReader<R> {
@@ -303,7 +405,7 @@ impl<R: Read> BufferedReader<R> {
         }
     }
 
-    pub fn read_zero_copy_record(&mut self) -> Result<Option<ZeroCopyRecord<'_>>> {
+    pub fn read_zero_copy_byte_record(&mut self) -> Result<Option<ZeroCopyByteRecord<'_>>> {
         use ReadResult::*;
 
         self.scratch.clear();
@@ -337,7 +439,7 @@ impl<R: Read> BufferedReader<R> {
                 Record => {
                     if self.scratch.is_empty() {
                         self.actual_buffer_position = Some(pos);
-                        return Ok(Some(ZeroCopyRecord::new(
+                        return Ok(Some(ZeroCopyByteRecord::new(
                             self.buffer.buffer()[..pos].trim_ascii_end(),
                             &self.seps,
                         )));
@@ -345,8 +447,38 @@ impl<R: Read> BufferedReader<R> {
                         self.scratch.extend(input[..pos].trim_ascii_end());
                         self.buffer.consume(pos);
 
-                        return Ok(Some(ZeroCopyRecord::new(&self.scratch, &self.seps)));
+                        return Ok(Some(ZeroCopyByteRecord::new(&self.scratch, &self.seps)));
                     }
+                }
+            };
+        }
+    }
+
+    pub fn read_byte_record(&mut self, record: &mut ByteRecord) -> Result<bool> {
+        use ReadResult::*;
+
+        record.clear();
+
+        if let Some(last_pos) = self.actual_buffer_position.take() {
+            self.buffer.consume(last_pos);
+        }
+
+        loop {
+            let input = self.buffer.fill_buf()?;
+
+            let (result, pos) = self.inner.read_record(input, record);
+
+            self.buffer.consume(pos);
+
+            match result {
+                End => {
+                    return Ok(false);
+                }
+                Cr | Lf | InputEmpty => {
+                    continue;
+                }
+                Record => {
+                    return Ok(true);
                 }
             };
         }
@@ -449,7 +581,7 @@ mod tests {
     }
 
     #[test]
-    fn test_read_zero_copy_record() -> Result<()> {
+    fn test_read_zero_copy_byte_record() -> Result<()> {
         let csv = "name,surname,age\n\"john\",\"landy, the \"\"everlasting\"\" bastard\",45\nlucy,rose,\"67\"\njermaine,jackson,\"89\"\n\nkarine,loucan,\"52\"\nrose,\"glib\",12\n\"guillaume\",\"plique\",\"42\"\r\n";
 
         let mut reader = BufferedReader::with_capacity(Cursor::new(csv), 32, b',', b'"');
@@ -477,8 +609,49 @@ mod tests {
         })
         .collect::<Vec<_>>();
 
-        while let Some(record) = reader.read_zero_copy_record()? {
+        while let Some(record) = reader.read_zero_copy_byte_record()? {
             records.push(record.iter().map(|cell| cell.to_vec()).collect::<Vec<_>>());
+        }
+
+        assert_eq!(records, expected);
+
+        Ok(())
+    }
+
+    macro_rules! brec {
+        ($($x: expr),*) => {{
+            let mut r = ByteRecord::new();
+
+            $(
+                r.push_field($x.as_bytes());
+            )*
+
+            r
+        }};
+    }
+
+    #[test]
+    fn test_read_byte_record() -> Result<()> {
+        let csv = "name,surname,age\n\"john\",\"landy, the \"\"everlasting\"\" bastard\",45\n\"\"\"ok\"\"\",whatever,dude\nlucy,rose,\"67\"\njermaine,jackson,\"89\"\n\nkarine,loucan,\"52\"\nrose,\"glib\",12\n\"guillaume\",\"plique\",\"42\"\r\n";
+
+        let mut reader = BufferedReader::with_capacity(Cursor::new(csv), 32, b',', b'"');
+        let mut records = Vec::new();
+        let mut record = ByteRecord::new();
+
+        let expected = vec![
+            brec!["name", "surname", "age"],
+            brec!["john", "landy, the \"everlasting\" bastard", "45"],
+            brec!["\"ok\"", "whatever", "dude"],
+            brec!["lucy", "rose", "67"],
+            brec!["jermaine", "jackson", "89"],
+            brec!["karine", "loucan", "52"],
+            brec!["rose", "glib", "12"],
+            brec!["guillaume", "plique", "42"],
+        ];
+
+        while reader.read_byte_record(&mut record)? {
+            dbg!(&record);
+            records.push(record.clone());
         }
 
         assert_eq!(records, expected);
