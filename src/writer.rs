@@ -77,9 +77,15 @@ impl<W: Write> Writer<W> {
         if self.quote_bounds.is_empty() {
             self.scratch.extend_from_slice(cell);
         } else {
-            for w in self.quote_bounds.windows(2) {
+            let windows = self.quote_bounds.windows(2);
+            let last_i = windows.len().saturating_sub(1);
+
+            for (i, w) in windows.enumerate() {
                 self.scratch.extend_from_slice(&cell[w[0]..w[1]]);
-                self.scratch.push(self.quote);
+
+                if i != last_i {
+                    self.scratch.push(self.quote);
+                }
             }
         }
 
@@ -134,7 +140,7 @@ mod tests {
 
         assert_eq!(
             std::str::from_utf8(writer.into_inner()?.get_ref()).unwrap(),
-            "name,surname,age\n\"john,\",landis,45\nlucy,\"get\ngot\",\"\"\"te,\"\"st\"\"\"\"\n",
+            "name,surname,age\n\"john,\",landis,45\nlucy,\"get\ngot\",\"\"\"te,\"\"st\"\"\"\n",
         );
 
         Ok(())
