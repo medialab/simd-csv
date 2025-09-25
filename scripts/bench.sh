@@ -28,7 +28,8 @@ do
     --warmup 1 \
     "$PROG baseline $path" \
     "$PROG simd $path" \
-    "$PROG zero-copy $path"
+    "$PROG zero-copy $path" \
+    "$PROG copy $path"
 
   printf %"$(tput cols)"s | tr " " "-"
   echo
