@@ -1,4 +1,4 @@
-use std::io::{BufRead, BufReader, Read, Result};
+use std::io::{self, BufRead, BufReader, Read};
 
 use memchr::{memchr, memchr2};
 
@@ -340,7 +340,7 @@ impl<R: Read> BufferedReader<R> {
         }
     }
 
-    pub fn count_records(&mut self) -> Result<u64> {
+    pub fn count_records(&mut self) -> io::Result<u64> {
         use ReadResult::*;
 
         let mut count: u64 = 0;
@@ -364,7 +364,7 @@ impl<R: Read> BufferedReader<R> {
         Ok(count)
     }
 
-    pub fn split_record(&mut self) -> Result<Option<&[u8]>> {
+    pub fn split_record(&mut self) -> io::Result<Option<&[u8]>> {
         use ReadResult::*;
 
         self.scratch.clear();
@@ -405,7 +405,7 @@ impl<R: Read> BufferedReader<R> {
         }
     }
 
-    pub fn read_zero_copy_byte_record(&mut self) -> Result<Option<ZeroCopyByteRecord<'_>>> {
+    pub fn read_zero_copy_byte_record(&mut self) -> io::Result<Option<ZeroCopyByteRecord<'_>>> {
         use ReadResult::*;
 
         self.scratch.clear();
@@ -454,7 +454,7 @@ impl<R: Read> BufferedReader<R> {
         }
     }
 
-    pub fn read_byte_record(&mut self, record: &mut ByteRecord) -> Result<bool> {
+    pub fn read_byte_record(&mut self, record: &mut ByteRecord) -> io::Result<bool> {
         use ReadResult::*;
 
         record.clear();
@@ -481,6 +481,32 @@ impl<R: Read> BufferedReader<R> {
                     return Ok(true);
                 }
             };
+        }
+    }
+
+    pub fn byte_records(&mut self) -> ByteRecordsIter<'_, R> {
+        ByteRecordsIter {
+            reader: self,
+            record: ByteRecord::new(),
+        }
+    }
+}
+
+pub struct ByteRecordsIter<'r, R> {
+    reader: &'r mut BufferedReader<R>,
+    record: ByteRecord,
+}
+
+impl<'r, R: Read> Iterator for ByteRecordsIter<'r, R> {
+    type Item = io::Result<ByteRecord>;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        // NOTE: cloning the record will not carry over excess capacity
+        // because the record only contains `Vec` currently.
+        match self.reader.read_byte_record(&mut self.record) {
+            Err(err) => Some(Err(err)),
+            Ok(true) => Some(Ok(self.record.clone())),
+            Ok(false) => None,
         }
     }
 }
@@ -581,7 +607,7 @@ mod tests {
     }
 
     #[test]
-    fn test_read_zero_copy_byte_record() -> Result<()> {
+    fn test_read_zero_copy_byte_record() -> io::Result<()> {
         let csv = "name,surname,age\n\"john\",\"landy, the \"\"everlasting\"\" bastard\",45\nlucy,rose,\"67\"\njermaine,jackson,\"89\"\n\nkarine,loucan,\"52\"\nrose,\"glib\",12\n\"guillaume\",\"plique\",\"42\"\r\n";
 
         let mut reader = BufferedReader::with_capacity(Cursor::new(csv), 32, b',', b'"');
@@ -631,12 +657,10 @@ mod tests {
     }
 
     #[test]
-    fn test_read_byte_record() -> Result<()> {
+    fn test_read_byte_record() -> io::Result<()> {
         let csv = "name,surname,age\n\"john\",\"landy, the \"\"everlasting\"\" bastard\",45\n\"\"\"ok\"\"\",whatever,dude\nlucy,rose,\"67\"\njermaine,jackson,\"89\"\n\nkarine,loucan,\"52\"\nrose,\"glib\",12\n\"guillaume\",\"plique\",\"42\"\r\n";
 
         let mut reader = BufferedReader::with_capacity(Cursor::new(csv), 32, b',', b'"');
-        let mut records = Vec::new();
-        let mut record = ByteRecord::new();
 
         let expected = vec![
             brec!["name", "surname", "age"],
@@ -649,12 +673,10 @@ mod tests {
             brec!["guillaume", "plique", "42"],
         ];
 
-        while reader.read_byte_record(&mut record)? {
-            dbg!(&record);
-            records.push(record.clone());
-        }
-
-        assert_eq!(records, expected);
+        assert_eq!(
+            reader.byte_records().collect::<Result<Vec<_>, _>>()?,
+            expected
+        );
 
         Ok(())
     }
