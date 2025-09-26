@@ -336,18 +336,6 @@ impl<R: Read> BufferedReader<R> {
         }
     }
 
-    pub fn strip_bom(&mut self) -> io::Result<()> {
-        let input = self.buffer.fill_buf()?;
-
-        if input.len() >= 3 {
-            if &input[..3] == b"\xef\xbb\xbf" {
-                self.buffer.consume(3);
-            }
-        }
-
-        Ok(())
-    }
-
     pub fn with_capacity(reader: R, capacity: usize, delimiter: u8, quote: u8) -> Self {
         Self {
             buffer: BufReader::with_capacity(capacity, reader),
@@ -355,6 +343,43 @@ impl<R: Read> BufferedReader<R> {
             seps: Vec::new(),
             actual_buffer_position: None,
             inner: Reader::new(delimiter, quote),
+        }
+    }
+
+    pub fn strip_bom(&mut self) -> io::Result<()> {
+        let input = self.buffer.fill_buf()?;
+
+        if input.len() >= 3 && &input[..3] == b"\xef\xbb\xbf" {
+            self.buffer.consume(3);
+        }
+
+        Ok(())
+    }
+
+    pub fn first_byte_record(&mut self, consume: bool) -> io::Result<ByteRecord> {
+        use ReadResult::*;
+
+        let mut record = ByteRecord::new();
+
+        let input = self.buffer.fill_buf()?;
+
+        let (result, pos) = self.inner.read_record(input, &mut record);
+
+        match result {
+            End => Ok(ByteRecord::new()),
+
+            // TODO: we could expand the capacity of the buffer automagically here
+            // if this becomes an issue.
+            Cr | Lf | ReadResult::InputEmpty => Err(io::Error::other(
+                "invalid headers or headers too long for buffer",
+            )),
+            Record => {
+                if consume {
+                    self.buffer.consume(pos);
+                }
+
+                Ok(record)
+            }
         }
     }
 
