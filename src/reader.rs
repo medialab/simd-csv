@@ -336,6 +336,18 @@ impl<R: Read> BufferedReader<R> {
         }
     }
 
+    pub fn strip_bom(&mut self) -> io::Result<()> {
+        let input = self.buffer.fill_buf()?;
+
+        if input.len() >= 3 {
+            if &input[..3] == b"\xef\xbb\xbf" {
+                self.buffer.consume(3);
+            }
+        }
+
+        Ok(())
+    }
+
     pub fn with_capacity(reader: R, capacity: usize, delimiter: u8, quote: u8) -> Self {
         Self {
             buffer: BufReader::with_capacity(capacity, reader),
@@ -698,6 +710,28 @@ mod tests {
         assert_eq!(
             reader.byte_records().collect::<Result<Vec<_>, _>>()?,
             expected
+        );
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_strip_bom() -> io::Result<()> {
+        let mut reader = BufferedReader::new(Cursor::new("name,surname,age"), b',', b'"');
+        reader.strip_bom()?;
+
+        assert_eq!(
+            reader.byte_records().next().unwrap()?,
+            brec!["name", "surname", "age"]
+        );
+
+        let mut reader =
+            BufferedReader::new(Cursor::new(b"\xef\xbb\xbfname,surname,age"), b',', b'"');
+        reader.strip_bom()?;
+
+        assert_eq!(
+            reader.byte_records().next().unwrap()?,
+            brec!["name", "surname", "age"]
         );
 
         Ok(())
