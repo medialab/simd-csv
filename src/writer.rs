@@ -8,7 +8,6 @@ pub struct Writer<W: Write> {
     quote: u8,
     buffer: BufWriter<W>,
     quote_bounds: Vec<usize>,
-    scratch: Vec<u8>,
     searcher: Searcher,
 }
 
@@ -18,8 +17,7 @@ impl<W: Write> Writer<W> {
             buffer: BufWriter::with_capacity(capacity, writer),
             quote,
             delimiter,
-            quote_bounds: Vec::new(),
-            scratch: Vec::new(),
+            quote_bounds: vec![0],
             searcher: Searcher::new(delimiter, quote, b'\n'),
         }
     }
@@ -47,49 +45,46 @@ impl<W: Write> Writer<W> {
     fn assess_quoting(&mut self, cell: &[u8]) -> bool {
         let mut must_quote = false;
 
-        self.quote_bounds.clear();
+        self.quote_bounds.truncate(1);
 
         for offset in self.searcher.search(cell) {
             let byte = cell[offset];
 
             if byte == self.quote {
-                if self.quote_bounds.is_empty() {
-                    self.quote_bounds.push(0);
-                }
-
                 self.quote_bounds.push(offset);
             }
 
             must_quote = true;
         }
 
-        if !self.quote_bounds.is_empty() {
+        if self.quote_bounds.len() > 1 {
             self.quote_bounds.push(cell.len());
         }
 
         must_quote
     }
 
-    fn quote(&mut self, cell: &[u8]) {
-        self.scratch.clear();
-        self.scratch.push(self.quote);
+    fn write_quoted_cell(&mut self, cell: &[u8]) -> io::Result<()> {
+        self.buffer.write_all(&[self.quote])?;
 
-        if self.quote_bounds.is_empty() {
-            self.scratch.extend_from_slice(cell);
+        if self.quote_bounds.len() < 2 {
+            self.buffer.write_all(cell)?;
         } else {
             let windows = self.quote_bounds.windows(2);
             let last_i = windows.len().saturating_sub(1);
 
             for (i, w) in windows.enumerate() {
-                self.scratch.extend_from_slice(&cell[w[0]..w[1]]);
+                self.buffer.write_all(&cell[w[0]..w[1]])?;
 
                 if i != last_i {
-                    self.scratch.push(self.quote);
+                    self.buffer.write_all(&[self.quote])?;
                 }
             }
         }
 
-        self.scratch.push(self.quote);
+        self.buffer.write_all(&[self.quote])?;
+
+        Ok(())
     }
 
     pub fn write_byte_record(&mut self, record: &ByteRecord) -> io::Result<()> {
@@ -101,8 +96,7 @@ impl<W: Write> Writer<W> {
             if !must_quote {
                 self.buffer.write_all(cell)?;
             } else {
-                self.quote(cell);
-                self.buffer.write_all(&self.scratch)?;
+                self.write_quoted_cell(cell)?;
             }
 
             if i != last_i {
