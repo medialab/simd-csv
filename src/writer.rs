@@ -12,6 +12,16 @@ pub struct Writer<W: Write> {
 }
 
 impl<W: Write> Writer<W> {
+    pub fn new(writer: W, delimiter: u8, quote: u8) -> Self {
+        Self {
+            buffer: BufWriter::new(writer),
+            quote,
+            delimiter,
+            quote_bounds: vec![0],
+            searcher: Searcher::new(delimiter, quote, b'\n'),
+        }
+    }
+
     pub fn with_capacity(writer: W, capacity: usize, delimiter: u8, quote: u8) -> Self {
         Self {
             buffer: BufWriter::with_capacity(capacity, writer),

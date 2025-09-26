@@ -326,10 +326,20 @@ pub struct BufferedReader<R> {
 }
 
 impl<R: Read> BufferedReader<R> {
+    pub fn new(reader: R, delimiter: u8, quote: u8) -> Self {
+        Self {
+            buffer: BufReader::new(reader),
+            scratch: Vec::new(),
+            seps: Vec::new(),
+            actual_buffer_position: None,
+            inner: Reader::new(delimiter, quote),
+        }
+    }
+
     pub fn with_capacity(reader: R, capacity: usize, delimiter: u8, quote: u8) -> Self {
         Self {
             buffer: BufReader::with_capacity(capacity, reader),
-            scratch: Vec::with_capacity(capacity),
+            scratch: Vec::new(),
             seps: Vec::new(),
             actual_buffer_position: None,
             inner: Reader::new(delimiter, quote),
