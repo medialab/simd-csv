@@ -1,14 +1,13 @@
 use std::io::{self, BufWriter, IntoInnerError, Write};
 
+use memchr::{memchr, memchr3};
+
 use crate::records::ByteRecord;
-use crate::searcher::Searcher;
 
 pub struct Writer<W: Write> {
     delimiter: u8,
     quote: u8,
     buffer: BufWriter<W>,
-    quote_bounds: Vec<usize>,
-    searcher: Searcher,
 }
 
 impl<W: Write> Writer<W> {
@@ -17,8 +16,6 @@ impl<W: Write> Writer<W> {
             buffer: BufWriter::new(writer),
             quote,
             delimiter,
-            quote_bounds: vec![0],
-            searcher: Searcher::new(delimiter, quote, b'\n'),
         }
     }
 
@@ -27,8 +24,6 @@ impl<W: Write> Writer<W> {
             buffer: BufWriter::with_capacity(capacity, writer),
             quote,
             delimiter,
-            quote_bounds: vec![0],
-            searcher: Searcher::new(delimiter, quote, b'\n'),
         }
     }
 
@@ -52,44 +47,27 @@ impl<W: Write> Writer<W> {
         Ok(())
     }
 
-    fn assess_quoting(&mut self, cell: &[u8]) -> bool {
-        let mut must_quote = false;
-
-        self.quote_bounds.truncate(1);
-
-        for offset in self.searcher.search(cell) {
-            let byte = cell[offset];
-
-            if byte == self.quote {
-                self.quote_bounds.push(offset);
-            }
-
-            must_quote = true;
-        }
-
-        if self.quote_bounds.len() > 1 {
-            self.quote_bounds.push(cell.len());
-        }
-
-        must_quote
+    fn should_quote(&self, cell: &[u8]) -> bool {
+        memchr3(self.quote, self.delimiter, b'\n', cell).is_some()
     }
 
     fn write_quoted_cell(&mut self, cell: &[u8]) -> io::Result<()> {
         self.buffer.write_all(&[self.quote])?;
 
-        if self.quote_bounds.len() < 2 {
-            self.buffer.write_all(cell)?;
-        } else {
-            let windows = self.quote_bounds.windows(2);
-            let last_i = windows.len().saturating_sub(1);
+        let mut i: usize = 0;
 
-            for (i, w) in windows.enumerate() {
-                self.buffer.write_all(&cell[w[0]..w[1]])?;
-
-                if i != last_i {
-                    self.buffer.write_all(&[self.quote])?;
+        while i < cell.len() {
+            match memchr(self.quote, &cell[i..]) {
+                None => {
+                    self.buffer.write_all(&cell[i..])?;
+                    break;
                 }
-            }
+                Some(offset) => {
+                    self.buffer.write_all(&cell[i..i + offset + 1])?;
+                    self.buffer.write_all(&[self.quote])?;
+                    i += offset + 1;
+                }
+            };
         }
 
         self.buffer.write_all(&[self.quote])?;
@@ -101,12 +79,10 @@ impl<W: Write> Writer<W> {
         let last_i = record.len().saturating_sub(1);
 
         for (i, cell) in record.iter().enumerate() {
-            let must_quote = self.assess_quoting(cell);
-
-            if !must_quote {
-                self.buffer.write_all(cell)?;
-            } else {
+            if self.should_quote(cell) {
                 self.write_quoted_cell(cell)?;
+            } else {
+                self.buffer.write_all(cell)?;
             }
 
             if i != last_i {
