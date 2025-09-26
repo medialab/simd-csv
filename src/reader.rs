@@ -496,6 +496,13 @@ impl<R: Read> BufferedReader<R> {
             record: ByteRecord::new(),
         }
     }
+
+    pub fn into_byte_records(self) -> ByteRecordsIntoIter<R> {
+        ByteRecordsIntoIter {
+            reader: self,
+            record: ByteRecord::new(),
+        }
+    }
 }
 
 pub struct ByteRecordsIter<'r, R> {
@@ -504,6 +511,25 @@ pub struct ByteRecordsIter<'r, R> {
 }
 
 impl<'r, R: Read> Iterator for ByteRecordsIter<'r, R> {
+    type Item = io::Result<ByteRecord>;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        // NOTE: cloning the record will not carry over excess capacity
+        // because the record only contains `Vec` currently.
+        match self.reader.read_byte_record(&mut self.record) {
+            Err(err) => Some(Err(err)),
+            Ok(true) => Some(Ok(self.record.clone())),
+            Ok(false) => None,
+        }
+    }
+}
+
+pub struct ByteRecordsIntoIter<R> {
+    reader: BufferedReader<R>,
+    record: ByteRecord,
+}
+
+impl<R: Read> Iterator for ByteRecordsIntoIter<R> {
     type Item = io::Result<ByteRecord>;
 
     fn next(&mut self) -> Option<Self::Item> {
