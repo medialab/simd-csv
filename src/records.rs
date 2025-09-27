@@ -1,4 +1,5 @@
 use std::fmt;
+use std::ops::Index;
 
 use crate::debug;
 
@@ -121,6 +122,20 @@ impl ByteRecord {
         self.finalize_field();
     }
 
+    #[inline]
+    pub fn get(&self, index: usize) -> Option<&[u8]> {
+        if index >= self.ends.len() {
+            None
+        } else if index == 0 {
+            let end = self.ends[index];
+            Some(&self.data[0..end])
+        } else {
+            let start = self.ends[index - 1];
+            let end = self.ends[index];
+            Some(&self.data[start..end])
+        }
+    }
+
     #[inline(always)]
     pub(crate) fn extend_from_slice(&mut self, slice: &[u8]) {
         self.data.extend_from_slice(slice);
@@ -134,6 +149,15 @@ impl ByteRecord {
     #[inline(always)]
     pub(crate) fn finalize_field(&mut self) {
         self.ends.push(self.data.len());
+    }
+}
+
+impl Index<usize> for ByteRecord {
+    type Output = [u8];
+
+    #[inline]
+    fn index(&self, i: usize) -> &[u8] {
+        self.get(i).unwrap()
     }
 }
 
@@ -209,14 +233,18 @@ mod tests {
 
         assert_eq!(record.len(), 0);
         assert_eq!(record.is_empty(), true);
+        assert_eq!(record.get(0), None);
 
         record.push_field(b"name");
         record.push_field(b"surname");
         record.push_field(b"age");
 
-        dbg!(&record);
-
         let expected: Vec<&[u8]> = vec![b"name", b"surname", b"age"];
         assert_eq!(record.iter().collect::<Vec<_>>(), expected);
+
+        assert_eq!(record.get(0), Some::<&[u8]>(b"name"));
+        assert_eq!(record.get(1), Some::<&[u8]>(b"surname"));
+        assert_eq!(record.get(2), Some::<&[u8]>(b"age"));
+        assert_eq!(record.get(3), None);
     }
 }
