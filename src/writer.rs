@@ -8,6 +8,7 @@ pub struct Writer<W: Write> {
     delimiter: u8,
     quote: u8,
     buffer: BufWriter<W>,
+    field_count: Option<usize>,
 }
 
 impl<W: Write> Writer<W> {
@@ -16,6 +17,7 @@ impl<W: Write> Writer<W> {
             buffer: BufWriter::new(writer),
             quote,
             delimiter,
+            field_count: None,
         }
     }
 
@@ -24,6 +26,7 @@ impl<W: Write> Writer<W> {
             buffer: BufWriter::with_capacity(capacity, writer),
             quote,
             delimiter,
+            field_count: None,
         }
     }
 
@@ -32,12 +35,29 @@ impl<W: Write> Writer<W> {
         self.buffer.flush()
     }
 
+    #[inline]
+    fn check_field_count(&mut self, written: usize) -> io::Result<()> {
+        match self.field_count {
+            Some(expected) => {
+                if written != expected {
+                    return Err(io::Error::other(format!("attempted to write record with {} fields, but the previous record had {} fields", written, expected)));
+                }
+            }
+            None => {
+                self.field_count = Some(written);
+            }
+        }
+
+        Ok(())
+    }
+
     pub fn write_record_no_quoting<I, T>(&mut self, record: I) -> io::Result<()>
     where
         I: IntoIterator<Item = T>,
         T: AsRef<[u8]>,
     {
         let mut first = true;
+        let mut written: usize = 0;
 
         for cell in record.into_iter() {
             if first {
@@ -47,7 +67,11 @@ impl<W: Write> Writer<W> {
             }
 
             self.buffer.write_all(cell.as_ref())?;
+
+            written += 1;
         }
+
+        self.check_field_count(written)?;
 
         self.buffer.write_all(b"\n")?;
 
@@ -116,6 +140,7 @@ impl<W: Write> Writer<W> {
         T: AsRef<[u8]>,
     {
         let mut first = true;
+        let mut written: usize = 0;
 
         for cell in record.into_iter() {
             if first {
@@ -131,7 +156,11 @@ impl<W: Write> Writer<W> {
             } else {
                 self.buffer.write_all(cell)?;
             }
+
+            written += 1;
         }
+
+        self.check_field_count(written)?;
 
         self.buffer.write_all(b"\n")?;
 
