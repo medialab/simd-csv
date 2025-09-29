@@ -59,36 +59,15 @@ impl<W: Write> Writer<W> {
         self.write_record_no_quoting(record.iter())
     }
 
-    #[inline]
-    fn should_quote(&self, cell: &[u8]) -> (bool, Option<usize>) {
-        match memchr3(self.quote, self.delimiter, b'\n', cell) {
-            Some(offset) => {
-                let byte = cell[offset];
-
-                if byte == self.quote {
-                    (true, Some(offset))
-                } else {
-                    (true, None)
-                }
-            }
-            None => (false, None),
-        }
+    #[inline(always)]
+    fn should_quote(&self, cell: &[u8]) -> bool {
+        memchr3(self.quote, self.delimiter, b'\n', cell).is_some()
     }
 
-    fn write_quoted_cell(
-        &mut self,
-        cell: &[u8],
-        first_quote_offset: Option<usize>,
-    ) -> io::Result<()> {
+    fn write_quoted_cell(&mut self, cell: &[u8]) -> io::Result<()> {
         self.buffer.write_all(&[self.quote])?;
 
         let mut i: usize = 0;
-
-        if let Some(offset) = first_quote_offset {
-            i = offset + 1;
-            self.buffer.write_all(&cell[..i])?;
-            self.buffer.write_all(&[self.quote])?;
-        }
 
         while i < cell.len() {
             match memchr(self.quote, &cell[i..]) {
@@ -125,10 +104,8 @@ impl<W: Write> Writer<W> {
 
             let cell = cell.as_ref();
 
-            let (should_quote, first_quote_offset) = self.should_quote(cell);
-
-            if should_quote {
-                self.write_quoted_cell(cell, first_quote_offset)?;
+            if self.should_quote(cell) {
+                self.write_quoted_cell(cell)?;
             } else {
                 self.buffer.write_all(cell)?;
             }
