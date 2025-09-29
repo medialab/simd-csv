@@ -214,6 +214,7 @@ impl Reader {
         (ReadResult::InputEmpty, input.len())
     }
 
+    // TODO: try to have a single iterator call wrapping the state machine logic
     fn read_record(&mut self, input: &[u8], record: &mut ByteRecord) -> (ReadResult, usize) {
         use ReadState::*;
 
@@ -758,6 +759,45 @@ mod tests {
             reader.byte_records().next().unwrap()?,
             brec!["name", "surname", "age"]
         );
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_empty_row() -> io::Result<()> {
+        let data = "name\n\"\"\nlucy\n\"\"";
+
+        // Counting
+        let mut reader = BufferedReader::new(Cursor::new(data), b',', b'"');
+
+        assert_eq!(reader.count_records()?, 4);
+
+        // Zero-copy
+        let mut reader = BufferedReader::new(Cursor::new(data), b',', b'"');
+
+        let expected = vec![
+            vec!["name".as_bytes().to_vec()],
+            vec!["\"\"".as_bytes().to_vec()],
+            vec!["lucy".as_bytes().to_vec()],
+            vec!["\"\"".as_bytes().to_vec()],
+        ];
+
+        // Read
+        let mut records = Vec::new();
+
+        while let Some(record) = reader.read_zero_copy_byte_record()? {
+            records.push(vec![record.as_slice().to_vec()]);
+        }
+
+        assert_eq!(records, expected);
+
+        let reader = BufferedReader::new(Cursor::new(data), b',', b'"');
+
+        let expected = vec![brec!["name"], brec![""], brec!["lucy"], brec![""]];
+
+        let records = reader.into_byte_records().collect::<Result<Vec<_>, _>>()?;
+        dbg!(&records);
+        assert_eq!(records, expected);
 
         Ok(())
     }

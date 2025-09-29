@@ -25,6 +25,11 @@ impl<'a> ZeroCopyByteRecord<'a> {
     }
 
     #[inline]
+    pub fn as_slice(&self) -> &[u8] {
+        self.slice
+    }
+
+    #[inline]
     pub fn iter(&self) -> ZeroCopyRecordIter<'_> {
         ZeroCopyRecordIter {
             record: self,
