@@ -61,7 +61,13 @@ impl<W: Write> Writer<W> {
 
     #[inline(always)]
     fn should_quote(&self, cell: &[u8]) -> bool {
-        memchr3(self.quote, self.delimiter, b'\n', cell).is_some()
+        if cell.len() < 8 {
+            cell.iter()
+                .copied()
+                .any(|b| b == self.quote || b == self.delimiter || b == b'\n')
+        } else {
+            memchr3(self.quote, self.delimiter, b'\n', cell).is_some()
+        }
     }
 
     fn write_quoted_cell(&mut self, cell: &[u8]) -> io::Result<()> {
@@ -69,18 +75,34 @@ impl<W: Write> Writer<W> {
 
         let mut i: usize = 0;
 
-        while i < cell.len() {
-            match memchr(self.quote, &cell[i..]) {
-                None => {
-                    self.buffer.write_all(&cell[i..])?;
-                    break;
+        if cell.len() < 8 {
+            while i < cell.len() {
+                match cell[i..].iter().copied().position(|b| b == self.quote) {
+                    None => {
+                        self.buffer.write_all(&cell[i..])?;
+                        break;
+                    }
+                    Some(offset) => {
+                        self.buffer.write_all(&cell[i..i + offset + 1])?;
+                        self.buffer.write_all(&[self.quote])?;
+                        i += offset + 1;
+                    }
                 }
-                Some(offset) => {
-                    self.buffer.write_all(&cell[i..i + offset + 1])?;
-                    self.buffer.write_all(&[self.quote])?;
-                    i += offset + 1;
-                }
-            };
+            }
+        } else {
+            while i < cell.len() {
+                match memchr(self.quote, &cell[i..]) {
+                    None => {
+                        self.buffer.write_all(&cell[i..])?;
+                        break;
+                    }
+                    Some(offset) => {
+                        self.buffer.write_all(&cell[i..i + offset + 1])?;
+                        self.buffer.write_all(&[self.quote])?;
+                        i += offset + 1;
+                    }
+                };
+            }
         }
 
         self.buffer.write_all(&[self.quote])?;
