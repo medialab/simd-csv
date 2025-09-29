@@ -27,19 +27,26 @@ impl<W: Write> Writer<W> {
         }
     }
 
+    #[inline(always)]
     pub fn flush(&mut self) -> io::Result<()> {
         self.buffer.flush()
     }
 
-    pub fn write_byte_record_no_quoting(&mut self, record: &ByteRecord) -> io::Result<()> {
-        let last_i = record.len().saturating_sub(1);
+    pub fn write_record_no_quoting<I, T>(&mut self, record: I) -> io::Result<()>
+    where
+        I: IntoIterator<Item = T>,
+        T: AsRef<[u8]>,
+    {
+        let mut first = true;
 
-        for (i, cell) in record.iter().enumerate() {
-            self.buffer.write_all(cell)?;
-
-            if i != last_i {
+        for cell in record.into_iter() {
+            if first {
+                first = false;
+            } else {
                 self.buffer.write_all(&[self.delimiter])?;
             }
+
+            self.buffer.write_all(cell.as_ref())?;
         }
 
         self.buffer.write_all(b"\n")?;
@@ -47,6 +54,12 @@ impl<W: Write> Writer<W> {
         Ok(())
     }
 
+    #[inline(always)]
+    pub fn write_byte_record_no_quoting(&mut self, record: &ByteRecord) -> io::Result<()> {
+        self.write_record_no_quoting(record.iter())
+    }
+
+    #[inline(always)]
     fn should_quote(&self, cell: &[u8]) -> bool {
         memchr3(self.quote, self.delimiter, b'\n', cell).is_some()
     }
@@ -75,18 +88,26 @@ impl<W: Write> Writer<W> {
         Ok(())
     }
 
-    pub fn write_byte_record(&mut self, record: &ByteRecord) -> io::Result<()> {
-        let last_i = record.len().saturating_sub(1);
+    pub fn write_record<I, T>(&mut self, record: I) -> io::Result<()>
+    where
+        I: IntoIterator<Item = T>,
+        T: AsRef<[u8]>,
+    {
+        let mut first = true;
 
-        for (i, cell) in record.iter().enumerate() {
+        for cell in record.into_iter() {
+            if first {
+                first = false;
+            } else {
+                self.buffer.write_all(&[self.delimiter])?;
+            }
+
+            let cell = cell.as_ref();
+
             if self.should_quote(cell) {
                 self.write_quoted_cell(cell)?;
             } else {
                 self.buffer.write_all(cell)?;
-            }
-
-            if i != last_i {
-                self.buffer.write_all(&[self.delimiter])?;
             }
         }
 
@@ -95,6 +116,12 @@ impl<W: Write> Writer<W> {
         Ok(())
     }
 
+    #[inline(always)]
+    pub fn write_byte_record(&mut self, record: &ByteRecord) -> io::Result<()> {
+        self.write_record(record.iter())
+    }
+
+    #[inline]
     pub fn into_inner(self) -> Result<W, IntoInnerError<BufWriter<W>>> {
         self.buffer.into_inner()
     }
@@ -113,7 +140,6 @@ mod tests {
         let output = Cursor::new(Vec::<u8>::new());
         let mut writer = Writer::with_capacity(output, 32, b',', b'"');
 
-        // TODO: flexibility
         writer.write_byte_record_no_quoting(&brec!["name", "surname", "age"])?;
         writer.write_byte_record(&brec!["john,", "landis", "45"])?;
         writer.write_byte_record(&brec!["lucy", "get\ngot", "\"te,\"st\""])?;
