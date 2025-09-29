@@ -85,7 +85,9 @@ impl<W: Write> Writer<W> {
 
     #[inline(always)]
     fn should_quote(&self, cell: &[u8]) -> bool {
-        if cell.len() < 8 {
+        if cell.is_empty() {
+            true
+        } else if cell.len() < 8 {
             cell.iter()
                 .copied()
                 .any(|b| b == self.quote || b == self.delimiter || b == b'\n')
@@ -95,6 +97,12 @@ impl<W: Write> Writer<W> {
     }
 
     fn write_quoted_cell(&mut self, cell: &[u8]) -> io::Result<()> {
+        if cell.is_empty() {
+            self.buffer.write_all(&[self.quote, self.quote])?;
+
+            return Ok(());
+        }
+
         self.buffer.write_all(&[self.quote])?;
 
         let mut i: usize = 0;
@@ -201,5 +209,21 @@ mod tests {
         );
 
         Ok(())
+    }
+
+    #[test]
+    fn test_write_empty_cells() {
+        fn write(record: &ByteRecord) -> String {
+            let output = Cursor::new(Vec::<u8>::new());
+            let mut writer = Writer::new(output, b',', b'"');
+            writer.write_byte_record(record).unwrap();
+            String::from_utf8_lossy(&writer.into_inner().unwrap().into_inner()).into_owned()
+        }
+
+        assert_eq!(write(&brec![]), "\n");
+        assert_eq!(write(&brec![""]), "\"\"\n");
+        assert_eq!(write(&brec!["", "", ""]), "\"\",\"\",\"\"\n");
+        assert_eq!(write(&brec!["name", "", "age"]), "name,\"\",age\n");
+        assert_eq!(write(&brec!["name", ""]), "name,\"\"\n");
     }
 }

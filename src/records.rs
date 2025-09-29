@@ -207,6 +207,10 @@ impl<'a> Iterator for ByteRecordIter<'a> {
 
 #[macro_export]
 macro_rules! brec {
+    () => {{
+        ByteRecord::new()
+    }};
+
     ($($x: expr),*) => {{
         let mut r = ByteRecord::new();
 
