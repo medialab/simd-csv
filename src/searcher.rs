@@ -17,9 +17,6 @@ impl<T> Pointer for *const T {
 
 #[cfg(target_arch = "x86_64")]
 mod x86_64 {
-    use core::arch::x86_64::{
-        __m128i, _mm_cmpeq_epi8, _mm_loadu_si128, _mm_movemask_epi8, _mm_or_si128, _mm_set1_epi8,
-    };
     use std::marker::PhantomData;
 
     use super::Pointer;
@@ -46,119 +43,128 @@ mod x86_64 {
         mask & (mask - 1)
     }
 
-    #[derive(Debug)]
-    pub struct SSE2Searcher {
-        n1: u8,
-        n2: u8,
-        n3: u8,
-        v1: __m128i,
-        v2: __m128i,
-        v3: __m128i,
-    }
+    pub mod sse2 {
+        use super::*;
 
-    impl SSE2Searcher {
-        #[inline]
-        pub unsafe fn new(n1: u8, n2: u8, n3: u8) -> Self {
-            Self {
-                n1,
-                n2,
-                n3,
-                v1: _mm_set1_epi8(n1 as i8),
-                v2: _mm_set1_epi8(n2 as i8),
-                v3: _mm_set1_epi8(n3 as i8),
+        use core::arch::x86_64::{
+            __m128i, _mm_cmpeq_epi8, _mm_loadu_si128, _mm_movemask_epi8, _mm_or_si128,
+            _mm_set1_epi8,
+        };
+
+        #[derive(Debug)]
+        pub struct SSE2Searcher {
+            n1: u8,
+            n2: u8,
+            n3: u8,
+            v1: __m128i,
+            v2: __m128i,
+            v3: __m128i,
+        }
+
+        impl SSE2Searcher {
+            #[inline]
+            pub unsafe fn new(n1: u8, n2: u8, n3: u8) -> Self {
+                Self {
+                    n1,
+                    n2,
+                    n3,
+                    v1: _mm_set1_epi8(n1 as i8),
+                    v2: _mm_set1_epi8(n2 as i8),
+                    v3: _mm_set1_epi8(n3 as i8),
+                }
+            }
+
+            #[inline(always)]
+            pub fn iter<'s, 'h>(&'s self, haystack: &'h [u8]) -> SSE2Indices<'s, 'h> {
+                SSE2Indices::new(self, haystack)
             }
         }
 
-        #[inline(always)]
-        pub fn iter<'s, 'h>(&'s self, haystack: &'h [u8]) -> SSE2Indices<'s, 'h> {
-            SSE2Indices::new(self, haystack)
+        #[derive(Debug)]
+        pub struct SSE2Indices<'s, 'h> {
+            searcher: &'s SSE2Searcher,
+            haystack: PhantomData<&'h [u8]>,
+            start: *const u8,
+            end: *const u8,
+            current: *const u8,
+            mask: u32,
         }
-    }
 
-    #[derive(Debug)]
-    pub struct SSE2Indices<'s, 'h> {
-        searcher: &'s SSE2Searcher,
-        haystack: PhantomData<&'h [u8]>,
-        start: *const u8,
-        end: *const u8,
-        current: *const u8,
-        mask: u32,
-    }
+        impl<'s, 'h> SSE2Indices<'s, 'h> {
+            #[inline]
+            fn new(searcher: &'s SSE2Searcher, haystack: &'h [u8]) -> Self {
+                let ptr = haystack.as_ptr();
 
-    impl<'s, 'h> SSE2Indices<'s, 'h> {
-        #[inline]
-        fn new(searcher: &'s SSE2Searcher, haystack: &'h [u8]) -> Self {
-            let ptr = haystack.as_ptr();
-
-            Self {
-                searcher,
-                haystack: PhantomData,
-                start: ptr,
-                end: ptr.wrapping_add(haystack.len()),
-                current: ptr,
-                mask: 0,
+                Self {
+                    searcher,
+                    haystack: PhantomData,
+                    start: ptr,
+                    end: ptr.wrapping_add(haystack.len()),
+                    current: ptr,
+                    mask: 0,
+                }
             }
         }
-    }
 
-    const SSE2_STEP: usize = 16;
+        const SSE2_STEP: usize = 16;
 
-    impl<'s, 'h> SSE2Indices<'s, 'h> {
-        pub unsafe fn next(&mut self) -> Option<usize> {
-            if self.start >= self.end {
-                return None;
-            }
-
-            let mut mask = self.mask;
-            let vectorized_end = self.end.sub(SSE2_STEP);
-            let mut current = self.current;
-            let start = self.start;
-            let v1 = self.searcher.v1;
-            let v2 = self.searcher.v2;
-            let v3 = self.searcher.v3;
-
-            'main: loop {
-                // Processing current move mask
-                if mask != 0 {
-                    let offset = current.sub(SSE2_STEP).add(first_offset(mask));
-                    self.mask = clear_least_significant_bit(mask);
-                    self.current = current;
-
-                    return Some(offset.distance(start));
+        impl<'s, 'h> SSE2Indices<'s, 'h> {
+            pub unsafe fn next(&mut self) -> Option<usize> {
+                if self.start >= self.end {
+                    return None;
                 }
 
-                // Main loop of unaligned loads
-                while current <= vectorized_end {
-                    let chunk = _mm_loadu_si128(current as *const __m128i);
-                    let cmp1 = _mm_cmpeq_epi8(chunk, v1);
-                    let cmp2 = _mm_cmpeq_epi8(chunk, v2);
-                    let cmp3 = _mm_cmpeq_epi8(chunk, v3);
-                    let cmp = _mm_or_si128(cmp1, cmp2);
-                    let cmp = _mm_or_si128(cmp, cmp3);
+                let mut mask = self.mask;
+                let vectorized_end = self.end.sub(SSE2_STEP);
+                let mut current = self.current;
+                let start = self.start;
+                let v1 = self.searcher.v1;
+                let v2 = self.searcher.v2;
+                let v3 = self.searcher.v3;
 
-                    mask = _mm_movemask_epi8(cmp) as u32;
-
-                    current = current.add(SSE2_STEP);
-
+                'main: loop {
+                    // Processing current move mask
                     if mask != 0 {
-                        continue 'main;
-                    }
-                }
+                        let offset = current.sub(SSE2_STEP).add(first_offset(mask));
+                        self.mask = clear_least_significant_bit(mask);
+                        self.current = current;
 
-                // Processing remaining bytes linearly
-                while current < self.end {
-                    if *current == self.searcher.n1
-                        || *current == self.searcher.n2
-                        || *current == self.searcher.n3
-                    {
-                        let offset = current.distance(start);
-                        self.current = current.add(1);
-                        return Some(offset);
+                        return Some(offset.distance(start));
                     }
-                    current = current.add(1);
-                }
 
-                return None;
+                    // Main loop of unaligned loads
+                    while current <= vectorized_end {
+                        let chunk = _mm_loadu_si128(current as *const __m128i);
+                        let cmp1 = _mm_cmpeq_epi8(chunk, v1);
+                        let cmp2 = _mm_cmpeq_epi8(chunk, v2);
+                        let cmp3 = _mm_cmpeq_epi8(chunk, v3);
+                        let cmp = _mm_or_si128(cmp1, cmp2);
+                        let cmp = _mm_or_si128(cmp, cmp3);
+
+                        mask = _mm_movemask_epi8(cmp) as u32;
+
+                        current = current.add(SSE2_STEP);
+
+                        if mask != 0 {
+                            continue 'main;
+                        }
+                    }
+
+                    // Processing remaining bytes linearly
+                    while current < self.end {
+                        if *current == self.searcher.n1
+                            || *current == self.searcher.n2
+                            || *current == self.searcher.n3
+                        {
+                            let offset = current.distance(start);
+                            self.current = current.add(1);
+                            return Some(offset);
+                        }
+                        current = current.add(1);
+                    }
+
+                    return None;
+                }
             }
         }
     }
@@ -327,7 +333,7 @@ mod aarch64 {
 #[derive(Debug)]
 pub struct Searcher {
     #[cfg(target_arch = "x86_64")]
-    inner: x86_64::SSE2Searcher,
+    inner: x86_64::sse2::SSE2Searcher,
 
     #[cfg(target_arch = "aarch64")]
     inner: aarch64::NeonSearcher,
@@ -360,7 +366,7 @@ impl Searcher {
         {
             unsafe {
                 Self {
-                    inner: x86_64::SSE2Searcher::new(n1, n2, n3),
+                    inner: x86_64::sse2::SSE2Searcher::new(n1, n2, n3),
                 }
             }
         }
@@ -410,7 +416,7 @@ impl Searcher {
 #[derive(Debug)]
 pub struct Indices<'s, 'h> {
     #[cfg(target_arch = "x86_64")]
-    inner: x86_64::SSE2Indices<'s, 'h>,
+    inner: x86_64::sse2::SSE2Indices<'s, 'h>,
 
     #[cfg(target_arch = "aarch64")]
     inner: aarch64::NeonIndices<'s, 'h>,
