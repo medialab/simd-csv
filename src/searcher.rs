@@ -191,20 +191,8 @@ mod aarch64 {
     }
 
     #[inline(always)]
-    fn get_for_offset(mask: u64) -> u64 {
-        #[cfg(target_endian = "big")]
-        {
-            mask.swap_bytes()
-        }
-        #[cfg(target_endian = "little")]
-        {
-            mask
-        }
-    }
-
-    #[inline(always)]
     fn first_offset(mask: u64) -> usize {
-        (get_for_offset(mask).trailing_zeros() >> 2) as usize
+        (mask.trailing_zeros() >> 2) as usize
     }
 
     #[inline(always)]
