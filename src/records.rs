@@ -200,6 +200,22 @@ impl Index<usize> for ByteRecord {
     }
 }
 
+impl<I, T> From<I> for ByteRecord
+where
+    I: IntoIterator<Item = T>,
+    T: AsRef<[u8]>,
+{
+    fn from(value: I) -> Self {
+        let mut record = Self::new();
+
+        for cell in value.into_iter() {
+            record.push_field(cell.as_ref());
+        }
+
+        record
+    }
+}
+
 impl fmt::Debug for ByteRecord {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(f, "ByteRecord(")?;
