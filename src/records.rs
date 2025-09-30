@@ -179,6 +179,13 @@ impl ByteRecord {
     }
 
     #[inline(always)]
+    pub(crate) fn pop_trailing_carriage_return(&mut self) {
+        if matches!(self.data.last(), Some(c) if *c == b'\r') {
+            self.data.pop();
+        }
+    }
+
+    #[inline(always)]
     pub(crate) fn finalize_field(&mut self) {
         self.ends.push(self.data.len());
     }

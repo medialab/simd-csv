@@ -261,6 +261,7 @@ impl Reader {
                         }
 
                         if byte == b'\n' {
+                            record.pop_trailing_carriage_return();
                             record.finalize_field();
                             self.record_was_read = true;
                             return (ReadResult::Record, pos + offset + 1);
@@ -896,25 +897,25 @@ mod tests {
         Ok(())
     }
 
-    // #[test]
-    // fn test_crlf() -> io::Result<()> {
-    //     let reader = BufferedReader::new(
-    //         Cursor::new("name,surname\r\nlucy,\"john\"\r\nevan,zhong\r\nbéatrice,glougou\r\n"),
-    //         b',',
-    //         b'"',
-    //     );
+    #[test]
+    fn test_crlf() -> io::Result<()> {
+        let reader = BufferedReader::new(
+            Cursor::new("name,surname\r\nlucy,\"john\"\r\nevan,zhong\r\nbéatrice,glougou\r\n"),
+            b',',
+            b'"',
+        );
 
-    //     let expected = vec![
-    //         brec!["name", "surname"],
-    //         brec!["lucy", "john"],
-    //         brec!["evan", "zhong"],
-    //         brec!["béatrice", "glougou"],
-    //     ];
+        let expected = vec![
+            brec!["name", "surname"],
+            brec!["lucy", "john"],
+            brec!["evan", "zhong"],
+            brec!["béatrice", "glougou"],
+        ];
 
-    //     let records = reader.into_byte_records().collect::<Result<Vec<_>, _>>()?;
+        let records = reader.into_byte_records().collect::<Result<Vec<_>, _>>()?;
 
-    //     assert_eq!(records, expected);
+        assert_eq!(records, expected);
 
-    //     Ok(())
-    // }
+        Ok(())
+    }
 }
