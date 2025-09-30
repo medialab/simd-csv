@@ -58,6 +58,7 @@ impl<W: Write> Writer<W> {
     {
         let mut first = true;
         let mut written: usize = 0;
+        let mut empty = false;
 
         for cell in record.into_iter() {
             if first {
@@ -66,9 +67,19 @@ impl<W: Write> Writer<W> {
                 self.buffer.write_all(&[self.delimiter])?;
             }
 
-            self.buffer.write_all(cell.as_ref())?;
+            let cell = cell.as_ref();
+
+            if cell.is_empty() {
+                empty = true;
+            }
+
+            self.buffer.write_all(cell)?;
 
             written += 1;
+        }
+
+        if written == 1 && empty {
+            self.buffer.write_all(&[self.quote, self.quote])?;
         }
 
         self.check_field_count(written)?;
@@ -83,11 +94,9 @@ impl<W: Write> Writer<W> {
         self.write_record_no_quoting(record.iter())
     }
 
-    #[inline(always)]
+    #[inline]
     fn should_quote(&self, cell: &[u8]) -> bool {
-        if cell.is_empty() {
-            true
-        } else if cell.len() < 8 {
+        if cell.len() < 8 {
             cell.iter()
                 .copied()
                 .any(|b| b == self.quote || b == self.delimiter || b == b'\n')
@@ -97,12 +106,6 @@ impl<W: Write> Writer<W> {
     }
 
     fn write_quoted_cell(&mut self, cell: &[u8]) -> io::Result<()> {
-        if cell.is_empty() {
-            self.buffer.write_all(&[self.quote, self.quote])?;
-
-            return Ok(());
-        }
-
         self.buffer.write_all(&[self.quote])?;
 
         let mut i: usize = 0;
@@ -149,6 +152,7 @@ impl<W: Write> Writer<W> {
     {
         let mut first = true;
         let mut written: usize = 0;
+        let mut empty = false;
 
         for cell in record.into_iter() {
             if first {
@@ -159,6 +163,10 @@ impl<W: Write> Writer<W> {
 
             let cell = cell.as_ref();
 
+            if cell.is_empty() {
+                empty = true;
+            }
+
             if self.should_quote(cell) {
                 self.write_quoted_cell(cell)?;
             } else {
@@ -166,6 +174,10 @@ impl<W: Write> Writer<W> {
             }
 
             written += 1;
+        }
+
+        if written == 1 && empty {
+            self.buffer.write_all(&[self.quote, self.quote])?;
         }
 
         self.check_field_count(written)?;
@@ -222,8 +234,8 @@ mod tests {
 
         assert_eq!(write(&brec![]), "\n");
         assert_eq!(write(&brec![""]), "\"\"\n");
-        assert_eq!(write(&brec!["", "", ""]), "\"\",\"\",\"\"\n");
-        assert_eq!(write(&brec!["name", "", "age"]), "name,\"\",age\n");
-        assert_eq!(write(&brec!["name", ""]), "name,\"\"\n");
+        assert_eq!(write(&brec!["", "", ""]), ",,\n");
+        assert_eq!(write(&brec!["name", "", "age"]), "name,,age\n");
+        assert_eq!(write(&brec!["name", ""]), "name,\n");
     }
 }
