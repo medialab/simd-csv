@@ -812,8 +812,6 @@ mod tests {
     fn test_read_byte_record() -> io::Result<()> {
         let csv = "name,surname,age\n\"john\",\"landy, the \"\"everlasting\"\" bastard\",45\n\"\"\"ok\"\"\",whatever,dude\nlucy,rose,\"67\"\njermaine,jackson,\"89\"\n\nkarine,loucan,\"52\"\nrose,\"glib\",12\n\"guillaume\",\"plique\",\"42\"\r\n";
 
-        let mut reader = BufferedReader::with_capacity(Cursor::new(csv), 32, b',', b'"');
-
         let expected = vec![
             brec!["name", "surname", "age"],
             brec!["john", "landy, the \"everlasting\" bastard", "45"],
@@ -825,10 +823,14 @@ mod tests {
             brec!["guillaume", "plique", "42"],
         ];
 
-        assert_eq!(
-            reader.byte_records().collect::<Result<Vec<_>, _>>()?,
-            expected
-        );
+        for capacity in [32usize, 4, 3, 2, 1] {
+            let mut reader = BufferedReader::with_capacity(Cursor::new(csv), capacity, b',', b'"');
+
+            assert_eq!(
+                reader.byte_records().collect::<Result<Vec<_>, _>>()?,
+                expected
+            );
+        }
 
         Ok(())
     }
