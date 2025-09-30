@@ -576,11 +576,11 @@ impl<R: Read> BufferedReader<R> {
                     if self.scratch.is_empty() {
                         self.actual_buffer_position = Some(pos);
                         return Ok(Some(ZeroCopyByteRecord::new(
-                            self.buffer.buffer()[..pos].trim_ascii_end(),
+                            &self.buffer.buffer()[..pos],
                             &self.seps,
                         )));
                     } else {
-                        self.scratch.extend(input[..pos].trim_ascii_end());
+                        self.scratch.extend(&input[..pos]);
                         self.buffer.consume(pos);
 
                         return Ok(Some(ZeroCopyByteRecord::new(&self.scratch, &self.seps)));
@@ -890,9 +890,31 @@ mod tests {
         let expected = vec![brec!["name"], brec![""], brec!["lucy"], brec![""]];
 
         let records = reader.into_byte_records().collect::<Result<Vec<_>, _>>()?;
-        dbg!(&records);
+
         assert_eq!(records, expected);
 
         Ok(())
     }
+
+    // #[test]
+    // fn test_crlf() -> io::Result<()> {
+    //     let reader = BufferedReader::new(
+    //         Cursor::new("name,surname\r\nlucy,\"john\"\r\nevan,zhong\r\nbéatrice,glougou\r\n"),
+    //         b',',
+    //         b'"',
+    //     );
+
+    //     let expected = vec![
+    //         brec!["name", "surname"],
+    //         brec!["lucy", "john"],
+    //         brec!["evan", "zhong"],
+    //         brec!["béatrice", "glougou"],
+    //     ];
+
+    //     let records = reader.into_byte_records().collect::<Result<Vec<_>, _>>()?;
+
+    //     assert_eq!(records, expected);
+
+    //     Ok(())
+    // }
 }
