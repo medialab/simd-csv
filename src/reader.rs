@@ -119,7 +119,6 @@ impl Reader {
         (ReadResult::InputEmpty, input.len())
     }
 
-    // TODO: try to have a single iterator call wrapping the state machine logic
     fn split_record_and_find_separators(
         &mut self,
         input: &[u8],
@@ -214,7 +213,6 @@ impl Reader {
         (ReadResult::InputEmpty, input.len())
     }
 
-    // TODO: try to have a single iterator call wrapping the state machine logic
     fn read_record(&mut self, input: &[u8], record: &mut ByteRecord) -> (ReadResult, usize) {
         use ReadState::*;
 
@@ -316,6 +314,100 @@ impl Reader {
 
         (ReadResult::InputEmpty, input.len())
     }
+
+    // NOTE: this version of the method wraps the state machine logic within the
+    // SIMD iteration logic. Ironically it seems slower than the multiple-speed
+    // stop-and-go implementation above.
+    // Be advised that this code does not handle final \r correctly yet.
+    // fn read_record(&mut self, input: &[u8], record: &mut ByteRecord) -> (ReadResult, usize) {
+    //     use ReadState::*;
+
+    //     if input.is_empty() {
+    //         if !self.record_was_read {
+    //             self.record_was_read = true;
+    //             record.finalize_field();
+    //             return (ReadResult::Record, 0);
+    //         }
+
+    //         return (ReadResult::End, 0);
+    //     }
+
+    //     if self.record_was_read {
+    //         if input[0] == b'\n' {
+    //             return (ReadResult::Lf, 1);
+    //         } else if input[0] == b'\r' {
+    //             return (ReadResult::Cr, 1);
+    //         }
+    //     }
+
+    //     self.record_was_read = false;
+
+    //     let mut last_offset: Option<usize> = None;
+    //     let mut start: usize;
+
+    //     for offset in self.searcher.search(input) {
+    //         let byte = input[offset];
+
+    //         if let Quote = self.state {
+    //             if byte == self.quote {
+    //                 let was_previously_a_byte = match last_offset {
+    //                     None => true,
+    //                     Some(o) => o == offset - 1,
+    //                 };
+
+    //                 if was_previously_a_byte {
+    //                     self.state = Quoted;
+    //                     continue;
+    //                 } else {
+    //                     self.state = Unquoted;
+    //                 }
+    //             } else {
+    //                 self.state = Unquoted;
+    //             }
+    //         }
+
+    //         start = last_offset.map(|o| o + 1).unwrap_or(0);
+    //         last_offset = Some(offset);
+
+    //         match self.state {
+    //             Unquoted => {
+    //                 record.extend_from_slice(&input[start..offset]);
+
+    //                 last_offset = Some(offset);
+
+    //                 if byte == self.delimiter {
+    //                     record.finalize_field();
+    //                     continue;
+    //                 }
+
+    //                 if byte == b'\n' {
+    //                     record.finalize_field();
+    //                     self.record_was_read = true;
+    //                     return (ReadResult::Record, offset + 1);
+    //                 }
+
+    //                 // Here, `byte` is guaranteed to be a quote
+    //                 self.state = Quoted;
+    //             }
+    //             Quoted => {
+    //                 record.extend_from_slice(&input[start..offset]);
+
+    //                 if byte != self.quote {
+    //                     record.push_byte(byte);
+    //                     continue;
+    //                 }
+
+    //                 self.state = Quote;
+    //             }
+    //             _ => unreachable!(),
+    //         }
+    //     }
+
+    //     start = last_offset.map(|o| o + 1).unwrap_or(0);
+    //     record.extend_from_slice(&input[start..]);
+
+    //     (ReadResult::InputEmpty, input.len())
+    // }
 }
 
 pub struct BufferedReader<R> {
