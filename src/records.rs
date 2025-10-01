@@ -87,24 +87,28 @@ impl<'a> Iterator for ZeroCopyRecordIter<'a> {
     type Item = &'a [u8];
 
     fn next(&mut self) -> Option<Self::Item> {
-        if self.current_sep_index > self.record.seps.len() {
+        let seps = &self.record.seps;
+        let len = seps.len();
+
+        if self.current_sep_index > len {
             return None;
         }
 
-        // Terminal flush
-        if self.current_sep_index == self.record.seps.len() {
-            let slice = &self.record.slice[self.offset..];
-            self.current_sep_index += 1;
-
-            return Some(slice);
-        }
-
-        let sep = self.record.seps[self.current_sep_index];
         let offset = self.offset;
-        self.current_sep_index += 1;
-        self.offset = sep + 1;
 
-        Some(&self.record.slice[offset..sep])
+        let end = if self.current_sep_index < len {
+            let sep = seps[self.current_sep_index];
+            self.offset = sep + 1;
+            sep
+        } else {
+            // Last field
+            self.offset = self.record.slice.len();
+            self.offset
+        };
+
+        self.current_sep_index += 1;
+
+        Some(&self.record.slice[offset..end])
     }
 }
 
