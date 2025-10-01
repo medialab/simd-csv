@@ -31,3 +31,7 @@ echo
 echo Copy
 time $PROG copy $1
 echo
+
+echo Mmap Copy
+time $PROG mmap-copy $1
+echo

@@ -672,27 +672,30 @@ impl<R: Read> Iterator for ByteRecordsIntoIter<R> {
 
 // NOTE: a reader to be used when the whole data fits into memory or when using
 // memory maps.
-pub struct TotalReader {
+pub struct TotalReader<'b> {
     inner: Reader,
+    bytes: &'b [u8],
+    pos: usize,
 }
 
-impl TotalReader {
-    pub fn new(delimiter: u8, quote: u8) -> Self {
+impl<'b> TotalReader<'b> {
+    pub fn new(delimiter: u8, quote: u8, bytes: &'b [u8]) -> Self {
         Self {
             inner: Reader::new(delimiter, quote),
+            bytes,
+            pos: 0,
         }
     }
 
-    pub fn count_records(&mut self, bytes: &[u8]) -> u64 {
+    pub fn count_records(&mut self) -> u64 {
         use ReadResult::*;
 
-        let mut i: usize = 0;
         let mut count: u64 = 0;
 
         loop {
-            let (result, pos) = self.inner.split_record(&bytes[i..]);
+            let (result, pos) = self.inner.split_record(&self.bytes[self.pos..]);
 
-            i += pos;
+            self.pos += pos;
 
             match result {
                 End => break,
@@ -704,6 +707,30 @@ impl TotalReader {
         }
 
         count
+    }
+
+    pub fn read_byte_record(&mut self, record: &mut ByteRecord) -> io::Result<bool> {
+        use ReadResult::*;
+
+        record.clear();
+
+        loop {
+            let (result, pos) = self.inner.read_record(&self.bytes[self.pos..], record);
+
+            self.pos += pos;
+
+            match result {
+                End => {
+                    return Ok(false);
+                }
+                Cr | Lf | InputEmpty => {
+                    continue;
+                }
+                Record => {
+                    return Ok(true);
+                }
+            };
+        }
     }
 }
 

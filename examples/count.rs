@@ -11,6 +11,7 @@ enum CountingMode {
     Mmap,
     ZeroCopy,
     Copy,
+    MmapCopy,
 }
 
 #[derive(Parser, Debug)]
@@ -89,9 +90,9 @@ fn main() -> csv::Result<()> {
 
             let map = unsafe { Mmap::map(&file).unwrap() };
 
-            let mut reader = simd_csv::TotalReader::new(args.delimiter(), b'"');
+            let mut reader = simd_csv::TotalReader::new(args.delimiter(), b'"', &map);
 
-            println!("{}", reader.count_records(&map));
+            println!("{}", reader.count_records());
         }
         CountingMode::ZeroCopy => {
             let mut reader = args.simd_buffered_reader()?;
@@ -121,6 +122,22 @@ fn main() -> csv::Result<()> {
         }
         CountingMode::Copy => {
             let mut reader = args.simd_buffered_reader()?;
+            let mut record = simd_csv::ByteRecord::new();
+
+            let mut count: u64 = 0;
+
+            while reader.read_byte_record(&mut record)? {
+                count += 1;
+            }
+
+            println!("{}", count);
+        }
+        CountingMode::MmapCopy => {
+            let file = File::open(&args.path)?;
+
+            let map = unsafe { Mmap::map(&file).unwrap() };
+
+            let mut reader = simd_csv::TotalReader::new(args.delimiter(), b'"', &map);
             let mut record = simd_csv::ByteRecord::new();
 
             let mut count: u64 = 0;
