@@ -152,10 +152,10 @@ impl Reader {
             match self.state {
                 Unquoted => {
                     // Here we are moving to next quote or end of line
-                    let mut last_offset: Option<usize> = None;
+                    let mut last_offset: usize = 0;
 
                     for offset in self.searcher.search(&input[pos..]) {
-                        last_offset = Some(offset);
+                        last_offset = offset + 1;
 
                         let byte = input[pos + offset];
 
@@ -174,8 +174,8 @@ impl Reader {
                         break;
                     }
 
-                    if let Some(offset) = last_offset {
-                        pos += offset + 1;
+                    if last_offset > 0 {
+                        pos += last_offset;
                     } else {
                         break;
                     }
@@ -242,16 +242,12 @@ impl Reader {
             match self.state {
                 Unquoted => {
                     // Here we are moving to next quote or end of line
-                    let mut last_offset: Option<usize> = None;
+                    let mut last_offset: usize = 0;
 
                     for offset in self.searcher.search(&input[pos..]) {
-                        if let Some(o) = last_offset {
-                            record.extend_from_slice(&input[pos + o + 1..pos + offset]);
-                        } else {
-                            record.extend_from_slice(&input[pos..pos + offset]);
-                        }
+                        record.extend_from_slice(&input[pos + last_offset..pos + offset]);
 
-                        last_offset = Some(offset);
+                        last_offset = offset + 1;
 
                         let byte = input[pos + offset];
 
@@ -272,8 +268,8 @@ impl Reader {
                         break;
                     }
 
-                    if let Some(offset) = last_offset {
-                        pos += offset + 1;
+                    if last_offset > 0 {
+                        pos += last_offset
                     } else {
                         break;
                     }
