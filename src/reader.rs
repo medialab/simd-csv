@@ -213,7 +213,7 @@ impl Reader {
         (ReadResult::InputEmpty, input.len())
     }
 
-    fn read_record(&mut self, input: &[u8], record: &mut ByteRecord) -> (ReadResult, usize) {
+    unsafe fn read_record(&mut self, input: &[u8], record: &mut ByteRecord) -> (ReadResult, usize) {
         use ReadState::*;
 
         if input.is_empty() {
@@ -236,6 +236,10 @@ impl Reader {
 
         self.record_was_read = false;
 
+        // NOTE: this is a bit hardcore, but it should be alright since there
+        // is usually only a single working record.
+        record.reserve(input.len());
+
         let mut pos: usize = 0;
 
         while pos < input.len() {
@@ -246,9 +250,9 @@ impl Reader {
 
                     for offset in self.searcher.search(&input[pos..]) {
                         if let Some(o) = last_offset {
-                            record.extend_from_slice(&input[pos + o + 1..pos + offset]);
+                            record.copy(&input[pos + o + 1..pos + offset]);
                         } else {
-                            record.extend_from_slice(&input[pos..pos + offset]);
+                            record.copy(&input[pos..pos + offset]);
                         }
 
                         last_offset = Some(offset);
@@ -281,7 +285,7 @@ impl Reader {
                 Quoted => {
                     // Here we moving to next quote
                     if let Some(offset) = memchr(self.quote, &input[pos..]) {
-                        record.extend_from_slice(&input[pos..pos + offset]);
+                        record.copy(&input[pos..pos + offset]);
                         pos += offset + 1;
                         self.state = Quote;
                     } else {
@@ -311,7 +315,7 @@ impl Reader {
             }
         }
 
-        record.extend_from_slice(&input[pos..]);
+        record.copy(&input[pos..]);
 
         (ReadResult::InputEmpty, input.len())
     }
@@ -457,7 +461,7 @@ impl<R: Read> BufferedReader<R> {
 
         let input = self.buffer.fill_buf()?;
 
-        let (result, pos) = self.inner.read_record(input, &mut record);
+        let (result, pos) = unsafe { self.inner.read_record(input, &mut record) };
 
         match result {
             End => Ok(ByteRecord::new()),
@@ -603,7 +607,7 @@ impl<R: Read> BufferedReader<R> {
         loop {
             let input = self.buffer.fill_buf()?;
 
-            let (result, pos) = self.inner.read_record(input, record);
+            let (result, pos) = unsafe { self.inner.read_record(input, record) };
 
             self.buffer.consume(pos);
 

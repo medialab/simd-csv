@@ -169,6 +169,23 @@ impl ByteRecord {
     }
 
     #[inline(always)]
+    pub(crate) fn reserve(&mut self, additional: usize) {
+        self.data.reserve(additional);
+    }
+
+    #[inline]
+    pub(crate) unsafe fn copy(&mut self, slice: &[u8]) {
+        let data_len = self.data.len();
+        let slice_len = slice.len();
+
+        let output = self.data[data_len..].as_mut_ptr();
+
+        std::ptr::copy_nonoverlapping(slice.as_ptr(), output, slice_len);
+
+        self.data.set_len(data_len + slice_len);
+    }
+
+    #[inline(always)]
     pub(crate) fn extend_from_slice(&mut self, slice: &[u8]) {
         self.data.extend_from_slice(slice);
     }
