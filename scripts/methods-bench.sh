@@ -5,37 +5,40 @@ set -uoe pipefail
 cargo build --release --example count
 PROG=target/release/examples/count
 
+TIMEFORMAT=%3lR
+TIME="/usr/bin/time -f %e"
+
 # Warmup
 cat $1 > /dev/null
 
 echo Baseline
-time $PROG baseline $1
+$TIME $PROG baseline $1 > /dev/null
 echo
 
 echo SIMD
-time $PROG simd $1
+$TIME $PROG simd $1 > /dev/null
 echo
 
 echo Split
-time $PROG split $1
+$TIME $PROG split $1 > /dev/null
 echo
 
-echo Mmap
-time $PROG mmap $1
-echo
+# echo Mmap
+# $TIME $PROG mmap $1 > /dev/null
+# echo
 
 echo Zero-copy
-time $PROG zero-copy $1
+$TIME $PROG zero-copy $1 > /dev/null
 echo
 
 echo Copy
-time $PROG copy $1
+$TIME $PROG copy $1 > /dev/null
 echo
 
-echo Mmap Copy
-time $PROG mmap-copy $1
-echo
+# echo Mmap Copy
+# $TIME $PROG mmap-copy $1 > /dev/null
+# echo
 
 echo Lines
-time $PROG lines $1
+$TIME $PROG lines $1 > /dev/null
 echo
