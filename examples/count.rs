@@ -12,6 +12,7 @@ enum CountingMode {
     ZeroCopy,
     Copy,
     MmapCopy,
+    Lines,
 }
 
 #[derive(Parser, Debug)]
@@ -147,6 +148,13 @@ fn main() -> csv::Result<()> {
             }
 
             println!("{}", count);
+        }
+        CountingMode::Lines => {
+            let file = File::open(&args.path)?;
+
+            let mut reader = simd_csv::LineBuffer::new(file);
+
+            println!("{}", reader.count_lines()?);
         }
     }
 

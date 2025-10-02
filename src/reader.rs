@@ -520,7 +520,7 @@ impl<R: Read> BufferedReader<R> {
                     self.buffer.consume(pos);
                 }
                 InputEmpty => {
-                    self.scratch.extend(&input[..pos]);
+                    self.scratch.extend_from_slice(input);
                     self.buffer.consume(pos);
                 }
                 Record => {
@@ -528,7 +528,7 @@ impl<R: Read> BufferedReader<R> {
                         self.actual_buffer_position = Some(pos);
                         return Ok(Some(&self.buffer.buffer()[..pos]));
                     } else {
-                        self.scratch.extend(&input[..pos]);
+                        self.scratch.extend_from_slice(&input[..pos]);
                         self.buffer.consume(pos);
 
                         return Ok(Some(&self.scratch));
@@ -566,7 +566,7 @@ impl<R: Read> BufferedReader<R> {
                     self.buffer.consume(pos);
                 }
                 InputEmpty => {
-                    self.scratch.extend(&input[..pos]);
+                    self.scratch.extend_from_slice(input);
                     self.buffer.consume(pos);
                 }
                 Record => {
@@ -577,7 +577,7 @@ impl<R: Read> BufferedReader<R> {
                             &self.seps,
                         )));
                     } else {
-                        self.scratch.extend(&input[..pos]);
+                        self.scratch.extend_from_slice(&input[..pos]);
                         self.buffer.consume(pos);
 
                         return Ok(Some(ZeroCopyByteRecord::new(&self.scratch, &self.seps)));
