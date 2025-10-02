@@ -115,7 +115,7 @@ impl<'a> Iterator for ZeroCopyRecordIter<'a> {
 #[derive(Default, Clone, PartialEq)]
 pub struct ByteRecord {
     data: Vec<u8>,
-    ends: Vec<usize>,
+    bounds: Vec<(usize, usize)>,
 }
 
 impl ByteRecord {
@@ -125,7 +125,7 @@ impl ByteRecord {
 
     #[inline]
     pub fn len(&self) -> usize {
-        self.ends.len()
+        self.bounds.len()
     }
 
     #[inline]
@@ -136,7 +136,7 @@ impl ByteRecord {
     #[inline]
     pub fn clear(&mut self) {
         self.data.clear();
-        self.ends.clear();
+        self.bounds.clear();
     }
 
     #[inline]
@@ -160,16 +160,10 @@ impl ByteRecord {
 
     #[inline]
     pub fn get(&self, index: usize) -> Option<&[u8]> {
-        if index >= self.ends.len() {
-            None
-        } else if index == 0 {
-            let end = self.ends[index];
-            Some(&self.data[0..end])
-        } else {
-            let start = self.ends[index - 1];
-            let end = self.ends[index];
-            Some(&self.data[start..end])
-        }
+        self.bounds
+            .get(index)
+            .copied()
+            .map(|(start, end)| &self.data[start..end])
     }
 
     #[inline(always)]
@@ -191,7 +185,15 @@ impl ByteRecord {
 
     #[inline(always)]
     pub(crate) fn finalize_field(&mut self) {
-        self.ends.push(self.data.len());
+        let bounds_len = self.bounds.len();
+
+        let start = if bounds_len == 0 {
+            0
+        } else {
+            self.bounds[bounds_len - 1].1
+        };
+
+        self.bounds.push((start, self.data.len()));
     }
 }
 
@@ -239,18 +241,12 @@ pub struct ByteRecordIter<'a> {
 impl<'a> Iterator for ByteRecordIter<'a> {
     type Item = &'a [u8];
 
+    #[inline]
     fn next(&mut self) -> Option<Self::Item> {
-        if self.current >= self.record.ends.len() {
+        if self.current >= self.record.bounds.len() {
             None
         } else {
-            let (start, end) = if self.current == 0 {
-                (0, self.record.ends[self.current])
-            } else {
-                (
-                    self.record.ends[self.current - 1],
-                    self.record.ends[self.current],
-                )
-            };
+            let (start, end) = self.record.bounds[self.current];
 
             self.current += 1;
 
