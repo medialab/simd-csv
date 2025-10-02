@@ -352,12 +352,12 @@ impl Reader {
 
     //         if let Quote = self.state {
     //             if byte == self.quote {
-    //                 let was_previously_a_byte = match last_offset {
+    //                 let was_previously_a_quote = match last_offset {
     //                     None => true,
     //                     Some(o) => o == offset - 1,
     //                 };
 
-    //                 if was_previously_a_byte {
+    //                 if was_previously_a_quote {
     //                     self.state = Quoted;
     //                     continue;
     //                 } else {
