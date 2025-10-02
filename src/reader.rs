@@ -245,30 +245,31 @@ impl Reader {
                     let mut last_offset: usize = 0;
 
                     for offset in self.searcher.search(&input[pos..]) {
-                        record.extend_from_slice(&input[pos + last_offset..pos + offset]);
-
                         last_offset = offset + 1;
 
                         let byte = input[pos + offset];
 
                         if byte == self.delimiter {
-                            record.finalize_field();
+                            record.finalize_field_including_delimiter(offset);
                             continue;
                         }
 
                         if byte == b'\n' {
+                            record.extend_from_slice(&input[pos..pos + offset]);
                             record.pop_trailing_carriage_return();
                             record.finalize_field();
                             self.record_was_read = true;
-                            return (ReadResult::Record, pos + offset + 1);
+                            return (ReadResult::Record, pos + last_offset);
                         }
 
                         // Here, `byte` is guaranteed to be a quote
                         self.state = Quoted;
+                        record.bump();
                         break;
                     }
 
                     if last_offset > 0 {
+                        record.extend_from_slice(&input[pos..pos + last_offset]);
                         pos += last_offset
                     } else {
                         break;
@@ -863,6 +864,14 @@ mod tests {
     fn test_strip_bom() -> io::Result<()> {
         let mut reader = BufferedReader::new(Cursor::new("name,surname,age"), b',', b'"');
         reader.strip_bom()?;
+
+        let record = BufferedReader::new(Cursor::new("name,surname,age"), b',', b'"')
+            .byte_records()
+            .next()
+            .unwrap()
+            .unwrap();
+
+        dbg!(&record.data, &record.bounds);
 
         assert_eq!(
             reader.byte_records().next().unwrap()?,

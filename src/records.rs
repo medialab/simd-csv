@@ -112,10 +112,11 @@ impl<'a> Iterator for ZeroCopyRecordIter<'a> {
     }
 }
 
-#[derive(Default, Clone, PartialEq)]
+#[derive(Default, Clone)]
 pub struct ByteRecord {
-    data: Vec<u8>,
-    bounds: Vec<(usize, usize)>,
+    pub(crate) data: Vec<u8>,
+    pub(crate) bounds: Vec<(usize, usize)>,
+    start: usize,
 }
 
 impl ByteRecord {
@@ -137,6 +138,7 @@ impl ByteRecord {
     pub fn clear(&mut self) {
         self.data.clear();
         self.bounds.clear();
+        self.start = 0;
     }
 
     #[inline]
@@ -183,17 +185,39 @@ impl ByteRecord {
         }
     }
 
-    #[inline(always)]
+    #[inline]
     pub(crate) fn finalize_field(&mut self) {
-        let bounds_len = self.bounds.len();
+        let start = self.start;
+        self.start = self.data.len();
 
-        let start = if bounds_len == 0 {
-            0
-        } else {
-            self.bounds[bounds_len - 1].1
-        };
+        self.bounds.push((start, self.start));
+    }
 
-        self.bounds.push((start, self.data.len()));
+    #[inline]
+    pub(crate) fn finalize_field_including_delimiter(&mut self, offset: usize) {
+        let start = self.start;
+        self.start = self.data.len() + offset;
+
+        self.bounds.push((start, self.start));
+
+        self.start += 1;
+    }
+
+    #[inline(always)]
+    pub(crate) fn bump(&mut self) {
+        self.start += 1;
+    }
+}
+
+impl PartialEq for ByteRecord {
+    fn eq(&self, other: &Self) -> bool {
+        if self.bounds.len() != other.bounds.len() {
+            return false;
+        }
+
+        self.iter()
+            .zip(other.iter())
+            .all(|(self_cell, other_cell)| self_cell == other_cell)
     }
 }
 
