@@ -2,15 +2,7 @@ use memchr::memchr;
 
 use std::io::{self, BufRead, BufReader, Read};
 
-fn trim_end(line: &[u8]) -> &[u8] {
-    let len = line.len();
-
-    if !line.is_empty() && line[len - 1] == b'\r' {
-        &line[..len - 1]
-    } else {
-        line
-    }
-}
+use crate::utils::trim_trailing_cr;
 
 pub struct LineBuffer<R> {
     buffer: BufReader<R>,
@@ -78,7 +70,7 @@ impl<R: Read> LineBuffer<R> {
 
             if len == 0 {
                 if !self.scratch.is_empty() {
-                    return Ok(Some(trim_end(&self.scratch)));
+                    return Ok(Some(trim_trailing_cr(&self.scratch)));
                 }
 
                 return Ok(None);
@@ -92,12 +84,12 @@ impl<R: Read> LineBuffer<R> {
                 Some(pos) => {
                     if self.scratch.is_empty() {
                         self.actual_buffer_position = Some(pos + 1);
-                        return Ok(Some(trim_end(&self.buffer.buffer()[..pos])));
+                        return Ok(Some(trim_trailing_cr(&self.buffer.buffer()[..pos])));
                     } else {
                         self.scratch.extend_from_slice(&input[..pos]);
                         self.buffer.consume(pos + 1);
 
-                        return Ok(Some(trim_end(&self.scratch)));
+                        return Ok(Some(trim_trailing_cr(&self.scratch)));
                     }
                 }
             };

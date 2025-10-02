@@ -2,30 +2,7 @@ use std::fmt;
 use std::ops::Index;
 
 use crate::debug;
-
-fn trim_end(slice: &[u8]) -> &[u8] {
-    let len = slice.len();
-
-    match len {
-        0 => slice,
-        1 => {
-            if slice[0] == b'\n' {
-                b""
-            } else {
-                slice
-            }
-        }
-        _ => {
-            if &slice[len - 2..] == b"\r\n" {
-                &slice[..len - 2]
-            } else if slice[len - 1] == b'\n' {
-                &slice[..len - 1]
-            } else {
-                slice
-            }
-        }
-    }
-}
+use crate::utils::trim_trailing_crlf;
 
 pub struct ZeroCopyByteRecord<'a> {
     slice: &'a [u8],
@@ -36,7 +13,7 @@ impl<'a> ZeroCopyByteRecord<'a> {
     #[inline]
     pub(crate) fn new(slice: &'a [u8], seps: &'a [usize]) -> Self {
         Self {
-            slice: trim_end(slice),
+            slice: trim_trailing_crlf(slice),
             seps,
         }
     }
@@ -176,13 +153,6 @@ impl ByteRecord {
     #[inline(always)]
     pub(crate) fn push_byte(&mut self, byte: u8) {
         self.data.push(byte);
-    }
-
-    #[inline(always)]
-    pub(crate) fn pop_trailing_carriage_return(&mut self) {
-        if matches!(self.data.last(), Some(c) if *c == b'\r') {
-            self.data.pop();
-        }
     }
 
     #[inline]

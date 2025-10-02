@@ -3,6 +3,7 @@ mod line_buffer;
 mod reader;
 mod records;
 mod searcher;
+mod utils;
 mod writer;
 
 pub use line_buffer::LineBuffer;

@@ -4,6 +4,7 @@ use memchr::{memchr, memchr2};
 
 use crate::records::{ByteRecord, ZeroCopyByteRecord};
 use crate::searcher::Searcher;
+use crate::utils::trim_trailing_cr;
 
 #[derive(Debug)]
 enum ReadResult {
@@ -219,6 +220,8 @@ impl Reader {
         if input.is_empty() {
             if !self.record_was_read {
                 self.record_was_read = true;
+
+                // NOTE: this is required to handle streams not ending with a newline
                 record.finalize_field();
                 return (ReadResult::Record, 0);
             }
@@ -249,14 +252,15 @@ impl Reader {
 
                         let byte = input[pos + offset];
 
+                        // NOTE: we don't copy here yet to avoid slowing down
+                        // because of multiple tiny copies.
                         if byte == self.delimiter {
                             record.finalize_field_including_delimiter(offset);
                             continue;
                         }
 
                         if byte == b'\n' {
-                            record.extend_from_slice(&input[pos..pos + offset]);
-                            record.pop_trailing_carriage_return();
+                            record.extend_from_slice(trim_trailing_cr(&input[pos..pos + offset]));
                             record.finalize_field();
                             self.record_was_read = true;
                             return (ReadResult::Record, pos + last_offset);
