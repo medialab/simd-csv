@@ -34,7 +34,7 @@ do
   echo `$COUNT mmap $path` -- mmap
   echo `$COUNT zero-copy --check-alignment $path` -- zero-copy
   echo `$COUNT copy $path` -- copy
-  echo `$COUNT mmap-copy $path` -- copy
+  echo `$COUNT mmap-copy $path` -- mmap-copy
   echo
   echo `$INTEGRITY $path | md5sum` baseline reader checksum
   echo `$INTEGRITY --simd $path | md5sum` simd reader checksum
