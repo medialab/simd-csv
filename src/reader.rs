@@ -167,7 +167,7 @@ impl Reader {
 
                         if byte == b'\n' {
                             self.record_was_read = true;
-                            return (ReadResult::Record, pos + offset + 1);
+                            return (ReadResult::Record, pos + last_offset);
                         }
 
                         // Here, `byte` is guaranteed to be a quote
@@ -946,6 +946,27 @@ mod tests {
             brec!["lucy", "john"],
             brec!["evan", "zhong"],
             brec!["béatrice", "glougou"],
+        ];
+
+        let records = reader.into_byte_records().collect::<Result<Vec<_>, _>>()?;
+
+        assert_eq!(records, expected);
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_quote_always() -> io::Result<()> {
+        let reader = BufferedReader::new(
+            Cursor::new("\"name\",\"surname\"\n\"lucy\",\"rose\"\n\"john\",\"mayhew\""),
+            b',',
+            b'"',
+        );
+
+        let expected = vec![
+            brec!["name", "surname"],
+            brec!["lucy", "rose"],
+            brec!["john", "mayhew"],
         ];
 
         let records = reader.into_byte_records().collect::<Result<Vec<_>, _>>()?;
