@@ -71,6 +71,13 @@ impl Reader {
         while pos < input.len() {
             match self.state {
                 Unquoted => {
+                    // Fast path for quoted field start
+                    if input[pos] == self.quote {
+                        self.state = Quoted;
+                        pos += 1;
+                        continue;
+                    }
+
                     // Here we are moving to next quote or end of line
                     if let Some(offset) = memchr2(b'\n', self.quote, &input[pos..]) {
                         pos += offset;
@@ -152,6 +159,13 @@ impl Reader {
         while pos < input.len() {
             match self.state {
                 Unquoted => {
+                    // Fast path for quoted field start
+                    if input[pos] == self.quote {
+                        self.state = Quoted;
+                        pos += 1;
+                        continue;
+                    }
+
                     // Here we are moving to next quote or end of line
                     let mut last_offset: usize = 0;
 
@@ -244,6 +258,13 @@ impl Reader {
         while pos < input.len() {
             match self.state {
                 Unquoted => {
+                    // Fast path for quoted field start
+                    if input[pos] == self.quote {
+                        self.state = Quoted;
+                        pos += 1;
+                        continue;
+                    }
+
                     // Here we are moving to next quote or end of line
                     let mut last_offset: usize = 0;
 
