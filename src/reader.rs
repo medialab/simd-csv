@@ -890,14 +890,6 @@ mod tests {
         let mut reader = BufferedReader::new(Cursor::new("name,surname,age"), b',', b'"');
         reader.strip_bom()?;
 
-        let record = BufferedReader::new(Cursor::new("name,surname,age"), b',', b'"')
-            .byte_records()
-            .next()
-            .unwrap()
-            .unwrap();
-
-        dbg!(&record.data, &record.bounds);
-
         assert_eq!(
             reader.byte_records().next().unwrap()?,
             brec!["name", "surname", "age"]
