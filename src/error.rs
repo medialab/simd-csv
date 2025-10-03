@@ -1,7 +1,7 @@
 use std::{error, fmt, io, result};
 
 #[derive(Debug)]
-enum ErrorKind {
+pub enum ErrorKind {
     Io(io::Error),
     UnequalLengths { expected_len: usize, len: usize },
     InvalidHeaders,
@@ -17,6 +17,18 @@ impl Error {
 
     pub(crate) fn invalid_headers() -> Self {
         Self(ErrorKind::InvalidHeaders)
+    }
+
+    pub fn is_io_error(&self) -> bool {
+        matches!(self.0, ErrorKind::Io(_))
+    }
+
+    pub fn kind(&self) -> &ErrorKind {
+        &self.0
+    }
+
+    pub fn into_kind(self) -> ErrorKind {
+        self.0
     }
 }
 

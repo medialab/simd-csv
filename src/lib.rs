@@ -7,7 +7,7 @@ mod searcher;
 mod utils;
 mod writer;
 
-pub use error::Error;
+pub use error::{Error, ErrorKind};
 pub use line_buffer::LineBuffer;
 pub use reader::{BufferedReader, TotalReader};
 pub use records::{ByteRecord, ZeroCopyByteRecord};
