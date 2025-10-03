@@ -1,3 +1,4 @@
+mod core;
 mod debug;
 mod error;
 mod line_buffer;
