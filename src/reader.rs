@@ -2,7 +2,7 @@ use std::io::{self, BufRead, BufReader, Read};
 
 use memchr::{memchr, memchr2};
 
-use crate::records::{ByteRecord, ZeroCopyByteRecord};
+use crate::records::{ByteRecord, ByteRecordBuilder, ZeroCopyByteRecord};
 use crate::searcher::Searcher;
 use crate::utils::trim_trailing_cr;
 
@@ -228,7 +228,11 @@ impl Reader {
         (ReadResult::InputEmpty, input.len())
     }
 
-    fn read_record(&mut self, input: &[u8], record: &mut ByteRecord) -> (ReadResult, usize) {
+    fn read_record(
+        &mut self,
+        input: &[u8],
+        record_builder: &mut ByteRecordBuilder,
+    ) -> (ReadResult, usize) {
         use ReadState::*;
 
         if input.is_empty() {
@@ -236,7 +240,7 @@ impl Reader {
                 self.record_was_read = true;
 
                 // NOTE: this is required to handle streams not ending with a newline
-                record.finalize_field();
+                record_builder.finalize_field();
                 return (ReadResult::Record, 0);
             }
 
@@ -276,25 +280,26 @@ impl Reader {
                         // NOTE: we don't copy here yet to avoid slowing down
                         // because of multiple tiny copies.
                         if byte == self.delimiter {
-                            record.finalize_field_including_delimiter(offset);
+                            record_builder.finalize_field_preemptively(offset);
                             continue;
                         }
 
                         if byte == b'\n' {
-                            record.extend_from_slice(trim_trailing_cr(&input[pos..pos + offset]));
-                            record.finalize_field();
+                            record_builder
+                                .extend_from_slice(trim_trailing_cr(&input[pos..pos + offset]));
+                            record_builder.finalize_field();
                             self.record_was_read = true;
                             return (ReadResult::Record, pos + last_offset);
                         }
 
                         // Here, `byte` is guaranteed to be a quote
                         self.state = Quoted;
-                        record.bump();
+                        record_builder.bump();
                         break;
                     }
 
                     if last_offset > 0 {
-                        record.extend_from_slice(&input[pos..pos + last_offset]);
+                        record_builder.extend_from_slice(&input[pos..pos + last_offset]);
                         pos += last_offset
                     } else {
                         break;
@@ -303,7 +308,7 @@ impl Reader {
                 Quoted => {
                     // Here we moving to next quote
                     if let Some(offset) = memchr(self.quote, &input[pos..]) {
-                        record.extend_from_slice(&input[pos..pos + offset]);
+                        record_builder.extend_from_slice(&input[pos..pos + offset]);
                         pos += offset + 1;
                         self.state = Quote;
                     } else {
@@ -317,14 +322,14 @@ impl Reader {
 
                     if byte == self.quote {
                         self.state = Quoted;
-                        record.push_byte(byte);
+                        record_builder.push_byte(byte);
                     } else if byte == self.delimiter {
-                        record.finalize_field();
+                        record_builder.finalize_field();
                         self.state = Unquoted;
                     } else if byte == b'\n' {
                         self.record_was_read = true;
                         self.state = Unquoted;
-                        record.finalize_field();
+                        record_builder.finalize_field();
                         return (ReadResult::Record, pos);
                     } else {
                         self.state = Unquoted;
@@ -333,7 +338,7 @@ impl Reader {
             }
         }
 
-        record.extend_from_slice(&input[pos..]);
+        record_builder.extend_from_slice(&input[pos..]);
 
         (ReadResult::InputEmpty, input.len())
     }
@@ -476,10 +481,11 @@ impl<R: Read> BufferedReader<R> {
         use ReadResult::*;
 
         let mut record = ByteRecord::new();
+        let mut record_builder = ByteRecordBuilder::wrap(&mut record);
 
         let input = self.buffer.fill_buf()?;
 
-        let (result, pos) = self.inner.read_record(input, &mut record);
+        let (result, pos) = self.inner.read_record(input, &mut record_builder);
 
         match result {
             End => Ok(ByteRecord::new()),
@@ -618,6 +624,8 @@ impl<R: Read> BufferedReader<R> {
 
         record.clear();
 
+        let mut record_builder = ByteRecordBuilder::wrap(record);
+
         if let Some(last_pos) = self.actual_buffer_position.take() {
             self.buffer.consume(last_pos);
         }
@@ -625,7 +633,7 @@ impl<R: Read> BufferedReader<R> {
         loop {
             let input = self.buffer.fill_buf()?;
 
-            let (result, pos) = self.inner.read_record(input, record);
+            let (result, pos) = self.inner.read_record(input, &mut record_builder);
 
             self.buffer.consume(pos);
 
@@ -740,8 +748,12 @@ impl<'b> TotalReader<'b> {
 
         record.clear();
 
+        let mut record_builder = ByteRecordBuilder::wrap(record);
+
         loop {
-            let (result, pos) = self.inner.read_record(&self.bytes[self.pos..], record);
+            let (result, pos) = self
+                .inner
+                .read_record(&self.bytes[self.pos..], &mut record_builder);
 
             self.pos += pos;
 

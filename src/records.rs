@@ -91,9 +91,8 @@ impl<'a> Iterator for ZeroCopyRecordIter<'a> {
 
 #[derive(Default, Clone)]
 pub struct ByteRecord {
-    pub(crate) data: Vec<u8>,
-    pub(crate) bounds: Vec<(usize, usize)>,
-    start: usize,
+    data: Vec<u8>,
+    bounds: Vec<(usize, usize)>,
 }
 
 impl ByteRecord {
@@ -115,7 +114,6 @@ impl ByteRecord {
     pub fn clear(&mut self) {
         self.data.clear();
         self.bounds.clear();
-        self.start = 0;
     }
 
     #[inline]
@@ -131,10 +129,19 @@ impl ByteRecord {
         }
     }
 
-    #[inline]
+    #[inline(always)]
     pub fn push_field(&mut self, bytes: &[u8]) {
-        self.extend_from_slice(bytes);
-        self.finalize_field();
+        self.data.extend_from_slice(bytes);
+
+        let bounds_len = self.bounds.len();
+
+        let start = if bounds_len == 0 {
+            0
+        } else {
+            self.bounds[bounds_len - 1].1
+        };
+
+        self.bounds.push((start, self.data.len()));
     }
 
     #[inline]
@@ -143,39 +150,6 @@ impl ByteRecord {
             .get(index)
             .copied()
             .map(|(start, end)| &self.data[start..end])
-    }
-
-    #[inline(always)]
-    pub(crate) fn extend_from_slice(&mut self, slice: &[u8]) {
-        self.data.extend_from_slice(slice);
-    }
-
-    #[inline(always)]
-    pub(crate) fn push_byte(&mut self, byte: u8) {
-        self.data.push(byte);
-    }
-
-    #[inline]
-    pub(crate) fn finalize_field(&mut self) {
-        let start = self.start;
-        self.start = self.data.len();
-
-        self.bounds.push((start, self.start));
-    }
-
-    #[inline]
-    pub(crate) fn finalize_field_including_delimiter(&mut self, offset: usize) {
-        let start = self.start;
-        self.start = self.data.len() + offset;
-
-        self.bounds.push((start, self.start));
-
-        self.start += 1;
-    }
-
-    #[inline(always)]
-    pub(crate) fn bump(&mut self) {
-        self.start += 1;
     }
 }
 
@@ -246,6 +220,51 @@ impl<'a> Iterator for ByteRecordIter<'a> {
 
             Some(&self.record.data[start..end])
         }
+    }
+}
+
+pub(crate) struct ByteRecordBuilder<'r> {
+    record: &'r mut ByteRecord,
+    start: usize,
+}
+
+impl<'r> ByteRecordBuilder<'r> {
+    #[inline(always)]
+    pub(crate) fn wrap(record: &'r mut ByteRecord) -> Self {
+        Self { record, start: 0 }
+    }
+
+    #[inline(always)]
+    pub(crate) fn extend_from_slice(&mut self, slice: &[u8]) {
+        self.record.data.extend_from_slice(slice);
+    }
+
+    #[inline(always)]
+    pub(crate) fn push_byte(&mut self, byte: u8) {
+        self.record.data.push(byte);
+    }
+
+    #[inline]
+    pub(crate) fn finalize_field(&mut self) {
+        let start = self.start;
+        self.start = self.record.data.len();
+
+        self.record.bounds.push((start, self.start));
+    }
+
+    #[inline]
+    pub(crate) fn finalize_field_preemptively(&mut self, offset: usize) {
+        let start = self.start;
+        self.start = self.record.data.len() + offset;
+
+        self.record.bounds.push((start, self.start));
+
+        self.start += 1;
+    }
+
+    #[inline(always)]
+    pub(crate) fn bump(&mut self) {
+        self.start += 1;
     }
 }
 
