@@ -1,3 +1,5 @@
+// NOTE: this is taken straight from the `csv` crate.
+
 /// A type that provides a human readable debug impl for arbitrary bytes.
 ///
 /// This generally works best when the bytes are presumed to be mostly UTF-8,
