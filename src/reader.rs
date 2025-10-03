@@ -444,6 +444,7 @@ pub struct BufferedReader<R> {
     seps: Vec<usize>,
     actual_buffer_position: Option<usize>,
     inner: Reader,
+    field_count: Option<usize>,
 }
 
 impl<R: Read> BufferedReader<R> {
@@ -454,6 +455,7 @@ impl<R: Read> BufferedReader<R> {
             seps: Vec::new(),
             actual_buffer_position: None,
             inner: Reader::new(delimiter, quote),
+            field_count: None,
         }
     }
 
@@ -464,7 +466,27 @@ impl<R: Read> BufferedReader<R> {
             seps: Vec::new(),
             actual_buffer_position: None,
             inner: Reader::new(delimiter, quote),
+            field_count: None,
         }
+    }
+
+    #[inline]
+    fn check_field_count(&mut self, written: usize) -> io::Result<()> {
+        match self.field_count {
+            Some(expected) => {
+                if written != expected {
+                    return Err(io::Error::other(format!(
+                        "found record with {} fields, but the previous record had {} fields",
+                        written, expected
+                    )));
+                }
+            }
+            None => {
+                self.field_count = Some(written);
+            }
+        }
+
+        Ok(())
     }
 
     pub fn strip_bom(&mut self) -> io::Result<()> {
@@ -603,6 +625,7 @@ impl<R: Read> BufferedReader<R> {
                 }
                 Record => {
                     if self.scratch.is_empty() {
+                        self.check_field_count(self.seps.len() + 1)?;
                         self.actual_buffer_position = Some(pos);
                         return Ok(Some(ZeroCopyByteRecord::new(
                             &self.buffer.buffer()[..pos],
@@ -611,7 +634,7 @@ impl<R: Read> BufferedReader<R> {
                     } else {
                         self.scratch.extend_from_slice(&input[..pos]);
                         self.buffer.consume(pos);
-
+                        self.check_field_count(self.seps.len() + 1)?;
                         return Ok(Some(ZeroCopyByteRecord::new(&self.scratch, &self.seps)));
                     }
                 }
@@ -645,6 +668,7 @@ impl<R: Read> BufferedReader<R> {
                     continue;
                 }
                 Record => {
+                    self.check_field_count(record.len())?;
                     return Ok(true);
                 }
             };
