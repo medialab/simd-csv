@@ -5,7 +5,7 @@ edition = "2021"
 authors = [
   "Guillaume Plique <guillaume.plique@sciencespo.fr>"
 ]
-description = "Specialized Rust CSV parser relying on SIMD instructions."
+description = "Specialized Rust CSV parsers/writers leveraging SIMD instructions. "
 documentation = "https://github.com/medialab/simd-csv#readme"
 homepage = "https://github.com/medialab/simd-csv"
 repository = "https://github.com/medialab/simd-csv"
@@ -22,7 +22,7 @@ lto = true
 strip = true
 
 [dependencies]
-memchr = "2.7.5"
+memchr = "2.7.6"
 
 [dev-dependencies]
 anyhow = "1.0.100"
