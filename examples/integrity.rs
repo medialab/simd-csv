@@ -24,7 +24,7 @@ impl Args {
 
 const BUFFERED_READER_DEFAULT_CAPACITY: usize = 1024 * (1 << 10);
 
-fn main() -> csv::Result<()> {
+fn main() -> anyhow::Result<()> {
     let args = Args::parse();
     let delimiter = args.delimiter();
     let file = File::open(&args.path)?;

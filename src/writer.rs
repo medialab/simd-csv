@@ -1,7 +1,8 @@
-use std::io::{self, BufWriter, IntoInnerError, Write};
+use std::io::{BufWriter, IntoInnerError, Write};
 
 use memchr::{memchr, memchr3};
 
+use crate::error::{self, Error};
 use crate::records::ByteRecord;
 
 pub struct Writer<W: Write> {
@@ -31,16 +32,18 @@ impl<W: Write> Writer<W> {
     }
 
     #[inline(always)]
-    pub fn flush(&mut self) -> io::Result<()> {
-        self.buffer.flush()
+    pub fn flush(&mut self) -> error::Result<()> {
+        self.buffer.flush()?;
+
+        Ok(())
     }
 
     #[inline]
-    fn check_field_count(&mut self, written: usize) -> io::Result<()> {
+    fn check_field_count(&mut self, written: usize) -> error::Result<()> {
         match self.field_count {
             Some(expected) => {
                 if written != expected {
-                    return Err(io::Error::other(format!("attempted to write record with {} fields, but the previous record had {} fields", written, expected)));
+                    return Err(Error::unequal_lengths(expected, written));
                 }
             }
             None => {
@@ -51,7 +54,7 @@ impl<W: Write> Writer<W> {
         Ok(())
     }
 
-    pub fn write_record_no_quoting<I, T>(&mut self, record: I) -> io::Result<()>
+    pub fn write_record_no_quoting<I, T>(&mut self, record: I) -> error::Result<()>
     where
         I: IntoIterator<Item = T>,
         T: AsRef<[u8]>,
@@ -90,7 +93,7 @@ impl<W: Write> Writer<W> {
     }
 
     #[inline(always)]
-    pub fn write_byte_record_no_quoting(&mut self, record: &ByteRecord) -> io::Result<()> {
+    pub fn write_byte_record_no_quoting(&mut self, record: &ByteRecord) -> error::Result<()> {
         self.write_record_no_quoting(record.iter())
     }
 
@@ -105,7 +108,7 @@ impl<W: Write> Writer<W> {
         }
     }
 
-    fn write_quoted_cell(&mut self, cell: &[u8]) -> io::Result<()> {
+    fn write_quoted_cell(&mut self, cell: &[u8]) -> error::Result<()> {
         self.buffer.write_all(&[self.quote])?;
 
         let mut i: usize = 0;
@@ -145,7 +148,7 @@ impl<W: Write> Writer<W> {
         Ok(())
     }
 
-    pub fn write_record<I, T>(&mut self, record: I) -> io::Result<()>
+    pub fn write_record<I, T>(&mut self, record: I) -> error::Result<()>
     where
         I: IntoIterator<Item = T>,
         T: AsRef<[u8]>,
@@ -188,7 +191,7 @@ impl<W: Write> Writer<W> {
     }
 
     #[inline(always)]
-    pub fn write_byte_record(&mut self, record: &ByteRecord) -> io::Result<()> {
+    pub fn write_byte_record(&mut self, record: &ByteRecord) -> error::Result<()> {
         self.write_record(record.iter())
     }
 
@@ -200,7 +203,7 @@ impl<W: Write> Writer<W> {
 
 #[cfg(test)]
 mod tests {
-    use std::io::Cursor;
+    use std::io::{self, Cursor};
 
     use super::*;
 

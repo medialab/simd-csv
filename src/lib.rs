@@ -1,4 +1,5 @@
 mod debug;
+mod error;
 mod line_buffer;
 mod reader;
 mod records;
@@ -6,6 +7,7 @@ mod searcher;
 mod utils;
 mod writer;
 
+pub use error::Error;
 pub use line_buffer::LineBuffer;
 pub use reader::{BufferedReader, TotalReader};
 pub use records::{ByteRecord, ZeroCopyByteRecord};

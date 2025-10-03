@@ -1,7 +1,8 @@
-use std::io::{self, BufRead, BufReader, Read};
+use std::io::{BufRead, BufReader, Read};
 
 use memchr::{memchr, memchr2};
 
+use crate::error::{self, Error};
 use crate::records::{ByteRecord, ByteRecordBuilder, ZeroCopyByteRecord};
 use crate::searcher::Searcher;
 use crate::utils::trim_trailing_cr;
@@ -471,14 +472,11 @@ impl<R: Read> BufferedReader<R> {
     }
 
     #[inline]
-    fn check_field_count(&mut self, written: usize) -> io::Result<()> {
+    fn check_field_count(&mut self, written: usize) -> error::Result<()> {
         match self.field_count {
             Some(expected) => {
                 if written != expected {
-                    return Err(io::Error::other(format!(
-                        "found record with {} fields, but the previous record had {} fields",
-                        written, expected
-                    )));
+                    return Err(Error::unequal_lengths(expected, written));
                 }
             }
             None => {
@@ -489,7 +487,7 @@ impl<R: Read> BufferedReader<R> {
         Ok(())
     }
 
-    pub fn strip_bom(&mut self) -> io::Result<()> {
+    pub fn strip_bom(&mut self) -> error::Result<()> {
         let input = self.buffer.fill_buf()?;
 
         if input.len() >= 3 && &input[..3] == b"\xef\xbb\xbf" {
@@ -499,7 +497,7 @@ impl<R: Read> BufferedReader<R> {
         Ok(())
     }
 
-    pub fn first_byte_record(&mut self, consume: bool) -> io::Result<ByteRecord> {
+    pub fn first_byte_record(&mut self, consume: bool) -> error::Result<ByteRecord> {
         use ReadResult::*;
 
         let mut record = ByteRecord::new();
@@ -514,9 +512,7 @@ impl<R: Read> BufferedReader<R> {
 
             // TODO: we could expand the capacity of the buffer automagically here
             // if this becomes an issue.
-            Cr | Lf | ReadResult::InputEmpty => Err(io::Error::other(
-                "invalid headers or headers too long for buffer",
-            )),
+            Cr | Lf | ReadResult::InputEmpty => Err(Error::invalid_headers()),
             Record => {
                 if consume {
                     self.buffer.consume(pos);
@@ -527,7 +523,7 @@ impl<R: Read> BufferedReader<R> {
         }
     }
 
-    pub fn count_records(&mut self) -> io::Result<u64> {
+    pub fn count_records(&mut self) -> error::Result<u64> {
         use ReadResult::*;
 
         let mut count: u64 = 0;
@@ -551,7 +547,7 @@ impl<R: Read> BufferedReader<R> {
         Ok(count)
     }
 
-    pub fn split_record(&mut self) -> io::Result<Option<&[u8]>> {
+    pub fn split_record(&mut self) -> error::Result<Option<&[u8]>> {
         use ReadResult::*;
 
         self.scratch.clear();
@@ -592,7 +588,7 @@ impl<R: Read> BufferedReader<R> {
         }
     }
 
-    pub fn read_zero_copy_byte_record(&mut self) -> io::Result<Option<ZeroCopyByteRecord<'_>>> {
+    pub fn read_zero_copy_byte_record(&mut self) -> error::Result<Option<ZeroCopyByteRecord<'_>>> {
         use ReadResult::*;
 
         self.scratch.clear();
@@ -642,7 +638,7 @@ impl<R: Read> BufferedReader<R> {
         }
     }
 
-    pub fn read_byte_record(&mut self, record: &mut ByteRecord) -> io::Result<bool> {
+    pub fn read_byte_record(&mut self, record: &mut ByteRecord) -> error::Result<bool> {
         use ReadResult::*;
 
         record.clear();
@@ -696,7 +692,7 @@ pub struct ByteRecordsIter<'r, R> {
 }
 
 impl<'r, R: Read> Iterator for ByteRecordsIter<'r, R> {
-    type Item = io::Result<ByteRecord>;
+    type Item = error::Result<ByteRecord>;
 
     fn next(&mut self) -> Option<Self::Item> {
         // NOTE: cloning the record will not carry over excess capacity
@@ -715,7 +711,7 @@ pub struct ByteRecordsIntoIter<R> {
 }
 
 impl<R: Read> Iterator for ByteRecordsIntoIter<R> {
-    type Item = io::Result<ByteRecord>;
+    type Item = error::Result<ByteRecord>;
 
     fn next(&mut self) -> Option<Self::Item> {
         // NOTE: cloning the record will not carry over excess capacity
@@ -767,7 +763,7 @@ impl<'b> TotalReader<'b> {
         count
     }
 
-    pub fn read_byte_record(&mut self, record: &mut ByteRecord) -> io::Result<bool> {
+    pub fn read_byte_record(&mut self, record: &mut ByteRecord) -> error::Result<bool> {
         use ReadResult::*;
 
         record.clear();
@@ -857,7 +853,7 @@ mod tests {
     }
 
     #[test]
-    fn test_read_zero_copy_byte_record() -> io::Result<()> {
+    fn test_read_zero_copy_byte_record() -> error::Result<()> {
         let csv = "name,surname,age\n\"john\",\"landy, the \"\"everlasting\"\" bastard\",45\nlucy,rose,\"67\"\njermaine,jackson,\"89\"\n\nkarine,loucan,\"52\"\nrose,\"glib\",12\n\"guillaume\",\"plique\",\"42\"\r\n";
 
         let mut reader = BufferedReader::with_capacity(32, Cursor::new(csv), b',', b'"');
@@ -895,7 +891,7 @@ mod tests {
     }
 
     #[test]
-    fn test_read_byte_record() -> io::Result<()> {
+    fn test_read_byte_record() -> error::Result<()> {
         let csv = "name,surname,age\n\"john\",\"landy, the \"\"everlasting\"\" bastard\",45\n\"\"\"ok\"\"\",whatever,dude\nlucy,rose,\"67\"\njermaine,jackson,\"89\"\n\nkarine,loucan,\"52\"\nrose,\"glib\",12\n\"guillaume\",\"plique\",\"42\"\r\n";
 
         let expected = vec![
@@ -922,7 +918,7 @@ mod tests {
     }
 
     #[test]
-    fn test_strip_bom() -> io::Result<()> {
+    fn test_strip_bom() -> error::Result<()> {
         let mut reader = BufferedReader::new(Cursor::new("name,surname,age"), b',', b'"');
         reader.strip_bom()?;
 
@@ -944,7 +940,7 @@ mod tests {
     }
 
     #[test]
-    fn test_empty_row() -> io::Result<()> {
+    fn test_empty_row() -> error::Result<()> {
         let data = "name\n\"\"\nlucy\n\"\"";
 
         // Counting
@@ -983,7 +979,7 @@ mod tests {
     }
 
     #[test]
-    fn test_crlf() -> io::Result<()> {
+    fn test_crlf() -> error::Result<()> {
         let reader = BufferedReader::new(
             Cursor::new("name,surname\r\nlucy,\"john\"\r\nevan,zhong\r\nbéatrice,glougou\r\n"),
             b',',
@@ -1005,7 +1001,7 @@ mod tests {
     }
 
     #[test]
-    fn test_quote_always() -> io::Result<()> {
+    fn test_quote_always() -> error::Result<()> {
         let reader = BufferedReader::new(
             Cursor::new("\"name\",\"surname\"\n\"lucy\",\"rose\"\n\"john\",\"mayhew\""),
             b',',
