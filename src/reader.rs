@@ -452,7 +452,7 @@ impl<R: Read> BufferedReader<R> {
         }
     }
 
-    pub fn with_capacity(reader: R, capacity: usize, delimiter: u8, quote: u8) -> Self {
+    pub fn with_capacity(capacity: usize, reader: R, delimiter: u8, quote: u8) -> Self {
         Self {
             buffer: BufReader::with_capacity(capacity, reader),
             scratch: Vec::new(),
@@ -769,7 +769,7 @@ mod tests {
     use super::*;
 
     fn count_records(data: &str, capacity: usize) -> u64 {
-        let mut splitter = BufferedReader::with_capacity(Cursor::new(data), capacity, b',', b'"');
+        let mut splitter = BufferedReader::with_capacity(capacity, Cursor::new(data), b',', b'"');
         splitter.count_records().unwrap()
     }
 
@@ -824,7 +824,7 @@ mod tests {
     fn test_read_zero_copy_byte_record() -> io::Result<()> {
         let csv = "name,surname,age\n\"john\",\"landy, the \"\"everlasting\"\" bastard\",45\nlucy,rose,\"67\"\njermaine,jackson,\"89\"\n\nkarine,loucan,\"52\"\nrose,\"glib\",12\n\"guillaume\",\"plique\",\"42\"\r\n";
 
-        let mut reader = BufferedReader::with_capacity(Cursor::new(csv), 32, b',', b'"');
+        let mut reader = BufferedReader::with_capacity(32, Cursor::new(csv), b',', b'"');
         let mut records = Vec::new();
 
         let expected = vec![
@@ -874,7 +874,7 @@ mod tests {
         ];
 
         for capacity in [32usize, 4, 3, 2, 1] {
-            let mut reader = BufferedReader::with_capacity(Cursor::new(csv), capacity, b',', b'"');
+            let mut reader = BufferedReader::with_capacity(capacity, Cursor::new(csv), b',', b'"');
 
             assert_eq!(
                 reader.byte_records().collect::<Result<Vec<_>, _>>()?,

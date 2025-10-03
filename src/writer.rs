@@ -21,7 +21,7 @@ impl<W: Write> Writer<W> {
         }
     }
 
-    pub fn with_capacity(writer: W, capacity: usize, delimiter: u8, quote: u8) -> Self {
+    pub fn with_capacity(capacity: usize, writer: W, delimiter: u8, quote: u8) -> Self {
         Self {
             buffer: BufWriter::with_capacity(capacity, writer),
             quote,
@@ -209,7 +209,7 @@ mod tests {
     #[test]
     fn test_write_byte_record() -> io::Result<()> {
         let output = Cursor::new(Vec::<u8>::new());
-        let mut writer = Writer::with_capacity(output, 32, b',', b'"');
+        let mut writer = Writer::with_capacity(32, output, b',', b'"');
 
         writer.write_byte_record_no_quoting(&brec!["name", "surname", "age"])?;
         writer.write_byte_record(&brec!["john,", "landis", "45"])?;

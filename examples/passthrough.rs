@@ -34,12 +34,12 @@ fn main() -> csv::Result<()> {
 
     if args.simd {
         let mut reader =
-            simd_csv::BufferedReader::with_capacity(file, DEFAULT_CAPACITY, delimiter, b'"');
+            simd_csv::BufferedReader::with_capacity(DEFAULT_CAPACITY, file, delimiter, b'"');
 
         let mut record = simd_csv::ByteRecord::new();
 
         let mut writer =
-            simd_csv::Writer::with_capacity(std::io::stdout(), DEFAULT_CAPACITY, delimiter, b'"');
+            simd_csv::Writer::with_capacity(DEFAULT_CAPACITY, std::io::stdout(), delimiter, b'"');
 
         while reader.read_byte_record(&mut record)? {
             if !args.only_read {
