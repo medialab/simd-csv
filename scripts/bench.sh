@@ -11,6 +11,7 @@ FILES=(
   range.csv
   worst-case.csv
   ndjson-scam.csv
+  quote-always.csv
 )
 
 # Building
