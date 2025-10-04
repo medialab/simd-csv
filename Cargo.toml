@@ -21,6 +21,13 @@ codegen-units = 1
 lto = true
 strip = true
 
+[profile.release-debug]
+inherits = "release"
+codegen-units = 1
+lto = false
+strip = false
+debug = true
+
 [dependencies]
 memchr = "2.7.6"
 
