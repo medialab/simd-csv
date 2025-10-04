@@ -1,29 +1,24 @@
 use memchr::memchr;
 
-use std::io::{self, BufRead, BufReader, Read};
+use std::io::{self, Read};
 
-use crate::utils::trim_trailing_cr;
+use crate::buffer::ScratchBuffer;
+use crate::utils::trim_trailing_crlf;
 
 pub struct LineBuffer<R> {
-    buffer: BufReader<R>,
-    scratch: Vec<u8>,
-    actual_buffer_position: Option<usize>,
+    inner: ScratchBuffer<R>,
 }
 
 impl<R: Read> LineBuffer<R> {
     pub fn new(inner: R) -> Self {
         Self {
-            buffer: BufReader::new(inner),
-            scratch: Vec::new(),
-            actual_buffer_position: None,
+            inner: ScratchBuffer::new(inner),
         }
     }
 
     pub fn with_capacity(capacity: usize, inner: R) -> Self {
         Self {
-            buffer: BufReader::with_capacity(capacity, inner),
-            scratch: Vec::with_capacity(capacity),
-            actual_buffer_position: None,
+            inner: ScratchBuffer::with_capacity(capacity, inner),
         }
     }
 
@@ -32,7 +27,7 @@ impl<R: Read> LineBuffer<R> {
         let mut current_is_empty = true;
 
         loop {
-            let input = self.buffer.fill_buf()?;
+            let input = self.inner.fill_buf()?;
             let len = input.len();
 
             if len == 0 {
@@ -45,12 +40,12 @@ impl<R: Read> LineBuffer<R> {
 
             match memchr(b'\n', input) {
                 None => {
-                    self.buffer.consume(len);
+                    self.inner.consume(len);
                     current_is_empty = false;
                 }
                 Some(pos) => {
                     count += 1;
-                    self.buffer.consume(pos + 1);
+                    self.inner.consume(pos + 1);
                     current_is_empty = true;
                 }
             };
@@ -58,19 +53,15 @@ impl<R: Read> LineBuffer<R> {
     }
 
     pub fn read_line(&mut self) -> io::Result<Option<&[u8]>> {
-        self.scratch.clear();
-
-        if let Some(last_pos) = self.actual_buffer_position.take() {
-            self.buffer.consume(last_pos);
-        }
+        self.inner.reset();
 
         loop {
-            let input = self.buffer.fill_buf()?;
+            let input = self.inner.fill_buf()?;
             let len = input.len();
 
             if len == 0 {
-                if !self.scratch.is_empty() {
-                    return Ok(Some(trim_trailing_cr(&self.scratch)));
+                if self.inner.has_something_saved() {
+                    return Ok(Some(trim_trailing_crlf(self.inner.saved())));
                 }
 
                 return Ok(None);
@@ -78,19 +69,11 @@ impl<R: Read> LineBuffer<R> {
 
             match memchr(b'\n', input) {
                 None => {
-                    self.scratch.extend_from_slice(input);
-                    self.buffer.consume(len);
+                    self.inner.save();
                 }
                 Some(pos) => {
-                    if self.scratch.is_empty() {
-                        self.actual_buffer_position = Some(pos + 1);
-                        return Ok(Some(trim_trailing_cr(&self.buffer.buffer()[..pos])));
-                    } else {
-                        self.scratch.extend_from_slice(&input[..pos]);
-                        self.buffer.consume(pos + 1);
-
-                        return Ok(Some(trim_trailing_cr(&self.scratch)));
-                    }
+                    let bytes = self.inner.flush(pos + 1);
+                    return Ok(Some(trim_trailing_crlf(bytes)));
                 }
             };
         }
