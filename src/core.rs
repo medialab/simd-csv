@@ -226,6 +226,71 @@ impl Reader {
         (ReadResult::InputEmpty, input.len())
     }
 
+    #[allow(dead_code)]
+    pub(crate) fn split_record_and_find_separators_alt(
+        &mut self,
+        input: &[u8],
+        seps_offset: usize,
+        seps: &mut Vec<usize>,
+    ) -> (ReadResult, usize) {
+        use ReadState::*;
+
+        if input.is_empty() {
+            if !self.record_was_read {
+                self.record_was_read = true;
+                return (ReadResult::Record, 0);
+            }
+
+            return (ReadResult::End, 0);
+        }
+
+        if self.record_was_read {
+            if input[0] == b'\n' {
+                return (ReadResult::Lf, 1);
+            } else if input[0] == b'\r' {
+                return (ReadResult::Cr, 1);
+            }
+        }
+
+        self.record_was_read = false;
+
+        for offset in self.searcher.search(input) {
+            let byte = input[offset];
+
+            match self.state {
+                Unquoted => {
+                    if byte == self.delimiter {
+                        seps.push(seps_offset + offset);
+                    } else if byte == self.quote {
+                        self.state = Quoted;
+                    } else {
+                        self.record_was_read = true;
+                        return (ReadResult::Record, offset);
+                    }
+                }
+                Quoted => {
+                    if byte == self.quote {
+                        self.state = Quote;
+                    }
+                }
+                Quote => {
+                    if byte == self.quote {
+                        self.state = Quoted;
+                    } else if byte == self.delimiter {
+                        seps.push(seps_offset + offset);
+                        self.state = Unquoted;
+                    } else {
+                        self.record_was_read = true;
+                        self.state = Unquoted;
+                        return (ReadResult::Record, offset);
+                    }
+                }
+            }
+        }
+
+        (ReadResult::InputEmpty, input.len())
+    }
+
     pub(crate) fn read_record(
         &mut self,
         input: &[u8],
