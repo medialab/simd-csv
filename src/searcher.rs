@@ -116,7 +116,7 @@ mod x86_64 {
                 }
 
                 let mut mask = self.mask;
-                let vectorized_end = self.end.sub(SSE2_STEP);
+                let vectorized_end = self.end.sub(SSE2_STEP * 2);
                 let mut current = self.current;
                 let start = self.start;
                 let v1 = self.searcher.v1;
@@ -126,7 +126,7 @@ mod x86_64 {
                 'main: loop {
                     // Processing current move mask
                     if mask != 0 {
-                        let offset = current.sub(SSE2_STEP).add(first_offset(mask));
+                        let offset = current.sub(SSE2_STEP * 2).add(first_offset(mask));
                         self.mask = clear_least_significant_bit(mask);
                         self.current = current;
 
@@ -135,16 +135,27 @@ mod x86_64 {
 
                     // Main loop of unaligned loads
                     while current <= vectorized_end {
-                        let chunk = _mm_loadu_si128(current as *const __m128i);
-                        let cmp1 = _mm_cmpeq_epi8(chunk, v1);
-                        let cmp2 = _mm_cmpeq_epi8(chunk, v2);
-                        let cmp3 = _mm_cmpeq_epi8(chunk, v3);
-                        let cmp = _mm_or_si128(cmp1, cmp2);
-                        let cmp = _mm_or_si128(cmp, cmp3);
+                        let chunk1 = _mm_loadu_si128(current as *const __m128i);
+                        let chunk2 = _mm_loadu_si128(current.add(SSE2_STEP) as *const __m128i);
 
-                        mask = _mm_movemask_epi8(cmp) as u32;
+                        let cmp1_1 = _mm_cmpeq_epi8(chunk1, v1);
+                        let cmp1_2 = _mm_cmpeq_epi8(chunk1, v2);
+                        let cmp1_3 = _mm_cmpeq_epi8(chunk1, v3);
+                        let cmp1 = _mm_or_si128(cmp1_1, cmp1_2);
+                        let cmp1 = _mm_or_si128(cmp1, cmp1_3);
 
-                        current = current.add(SSE2_STEP);
+                        let cmp2_1 = _mm_cmpeq_epi8(chunk2, v1);
+                        let cmp2_2 = _mm_cmpeq_epi8(chunk2, v2);
+                        let cmp2_3 = _mm_cmpeq_epi8(chunk2, v3);
+                        let cmp2 = _mm_or_si128(cmp2_1, cmp2_2);
+                        let cmp2 = _mm_or_si128(cmp2, cmp2_3);
+
+                        let mask1 = _mm_movemask_epi8(cmp1) as u32;
+                        let mask2 = _mm_movemask_epi8(cmp2) as u32;
+
+                        mask = mask1 | (mask2 << 16);
+
+                        current = current.add(SSE2_STEP * 2);
 
                         if mask != 0 {
                             continue 'main;
