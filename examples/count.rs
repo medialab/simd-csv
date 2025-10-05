@@ -90,6 +90,8 @@ fn main() -> anyhow::Result<()> {
             let file = File::open(&args.path)?;
 
             let map = unsafe { Mmap::map(&file).unwrap() };
+            map.advise(memmap2::Advice::Sequential).unwrap();
+            map.advise(memmap2::Advice::WillNeed).unwrap();
 
             let mut reader = simd_csv::TotalReader::new(args.delimiter(), b'"', &map);
 
@@ -137,6 +139,8 @@ fn main() -> anyhow::Result<()> {
             let file = File::open(&args.path)?;
 
             let map = unsafe { Mmap::map(&file).unwrap() };
+            map.advise(memmap2::Advice::Sequential).unwrap();
+            map.advise(memmap2::Advice::WillNeed).unwrap();
 
             let mut reader = simd_csv::TotalReader::new(args.delimiter(), b'"', &map);
             let mut record = simd_csv::ByteRecord::new();
