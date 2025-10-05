@@ -23,9 +23,9 @@ echo Split
 $TIME $PROG split $1 > /dev/null
 echo
 
-echo Mmap
-$TIME $PROG mmap $1 > /dev/null
-echo
+# echo Mmap
+# $TIME $PROG mmap $1 > /dev/null
+# echo
 
 echo Zero-copy
 $TIME $PROG zero-copy $1 > /dev/null
@@ -35,9 +35,9 @@ echo Copy
 $TIME $PROG copy $1 > /dev/null
 echo
 
-echo Mmap Copy
-$TIME $PROG mmap-copy $1 > /dev/null
-echo
+# echo Mmap Copy
+# $TIME $PROG mmap-copy $1 > /dev/null
+# echo
 
 echo Lines
 $TIME $PROG lines $1 > /dev/null
