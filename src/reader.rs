@@ -2,6 +2,7 @@ use std::io::{BufRead, BufReader, Read};
 
 use crate::core::{self, ReadResult};
 use crate::error::{self, Error};
+use crate::ext::StripBom;
 use crate::records::{ByteRecord, ByteRecordBuilder, ZeroCopyByteRecord};
 
 pub struct BufferedReader<R> {
@@ -53,12 +54,7 @@ impl<R: Read> BufferedReader<R> {
     }
 
     pub fn strip_bom(&mut self) -> error::Result<()> {
-        let input = self.buffer.fill_buf()?;
-
-        if input.len() >= 3 && &input[..3] == b"\xef\xbb\xbf" {
-            self.buffer.consume(3);
-        }
-
+        self.buffer.strip_bom()?;
         Ok(())
     }
 

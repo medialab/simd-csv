@@ -1,26 +1,8 @@
-/// A trait for adding some helper routines to pointers.
-trait Pointer {
-    /// Returns the distance, in units of `T`, between `self` and `origin`.
-    ///
-    /// # Safety
-    ///
-    /// Same as `ptr::offset_from` in addition to `self >= origin`.
-    unsafe fn distance(self, origin: Self) -> usize;
-}
-
-impl<T> Pointer for *const T {
-    #[inline(always)]
-    unsafe fn distance(self, origin: *const T) -> usize {
-        // TODO: Replace with `ptr::sub_ptr` once stabilized.
-        usize::try_from(self.offset_from(origin)).unwrap_unchecked()
-    }
-}
-
 #[cfg(target_arch = "x86_64")]
 mod x86_64 {
     use std::marker::PhantomData;
 
-    use super::Pointer;
+    use crate::ext::Pointer;
 
     #[inline(always)]
     fn get_for_offset(mask: u32) -> u32 {
@@ -179,7 +161,7 @@ mod aarch64 {
     };
     use std::marker::PhantomData;
 
-    use super::Pointer;
+    use crate::ext::Pointer;
 
     #[inline(always)]
     unsafe fn neon_movemask(v: uint8x16_t) -> u64 {

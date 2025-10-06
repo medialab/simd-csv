@@ -2,6 +2,7 @@ mod buffer;
 mod core;
 mod debug;
 mod error;
+mod ext;
 mod line_buffer;
 mod reader;
 mod records;
