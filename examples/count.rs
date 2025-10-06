@@ -55,12 +55,11 @@ impl Args {
     }
 
     fn simd_buffered_reader(&self) -> csv::Result<simd_csv::Reader<File>> {
-        Ok(simd_csv::Reader::with_capacity(
-            BUFFERED_READER_DEFAULT_CAPACITY,
-            File::open(&self.path)?,
-            self.delimiter(),
-            b'"',
-        ))
+        Ok(
+            simd_csv::ReaderBuilder::with_capacity(BUFFERED_READER_DEFAULT_CAPACITY)
+                .delimiter(self.delimiter())
+                .from_reader(File::open(&self.path)?),
+        )
     }
 }
 

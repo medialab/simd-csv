@@ -1,31 +1,77 @@
 use std::io::{BufRead, BufReader, Read};
 
-use crate::core::{self, ReadResult};
+use crate::core::{CoreReader, ReadResult};
 use crate::error::{self, Error};
 use crate::ext::StripBom;
 use crate::records::{ByteRecord, ByteRecordBuilder};
 
+pub struct ReaderBuilder {
+    delimiter: u8,
+    quote: u8,
+    buffer_capacity: Option<usize>,
+}
+
+impl Default for ReaderBuilder {
+    fn default() -> Self {
+        Self {
+            delimiter: b',',
+            quote: b'"',
+            buffer_capacity: None,
+        }
+    }
+}
+
+impl ReaderBuilder {
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    pub fn with_capacity(capacity: usize) -> Self {
+        let mut reader = Self::default();
+        reader.buffer_capacity(capacity);
+        reader
+    }
+
+    pub fn delimiter(&mut self, delimiter: u8) -> &mut Self {
+        self.delimiter = delimiter;
+        self
+    }
+
+    pub fn quote(&mut self, quote: u8) -> &mut Self {
+        self.quote = quote;
+        self
+    }
+
+    pub fn buffer_capacity(&mut self, capacity: usize) -> &mut Self {
+        self.buffer_capacity = Some(capacity);
+        self
+    }
+
+    fn bufreader<R: Read>(&self, reader: R) -> BufReader<R> {
+        match self.buffer_capacity {
+            None => BufReader::new(reader),
+            Some(capacity) => BufReader::with_capacity(capacity, reader),
+        }
+    }
+
+    pub fn from_reader<R: Read>(&self, reader: R) -> Reader<R> {
+        Reader {
+            buffer: self.bufreader(reader),
+            inner: CoreReader::new(self.delimiter, self.quote),
+            field_count: None,
+        }
+    }
+}
+
 pub struct Reader<R> {
     buffer: BufReader<R>,
-    inner: core::CoreReader,
+    inner: CoreReader,
     field_count: Option<usize>,
 }
 
 impl<R: Read> Reader<R> {
-    pub fn new(reader: R, delimiter: u8, quote: u8) -> Self {
-        Self {
-            buffer: BufReader::new(reader),
-            inner: core::CoreReader::new(delimiter, quote),
-            field_count: None,
-        }
-    }
-
-    pub fn with_capacity(capacity: usize, reader: R, delimiter: u8, quote: u8) -> Self {
-        Self {
-            buffer: BufReader::with_capacity(capacity, reader),
-            inner: core::CoreReader::new(delimiter, quote),
-            field_count: None,
-        }
+    pub fn from_reader(reader: R) -> Self {
+        ReaderBuilder::new().from_reader(reader)
     }
 
     #[inline]
@@ -181,7 +227,7 @@ mod tests {
         ];
 
         for capacity in [32usize, 4, 3, 2, 1] {
-            let mut reader = Reader::with_capacity(capacity, Cursor::new(csv), b',', b'"');
+            let mut reader = ReaderBuilder::with_capacity(capacity).from_reader(Cursor::new(csv));
 
             assert_eq!(
                 reader.byte_records().collect::<Result<Vec<_>, _>>()?,
@@ -194,7 +240,7 @@ mod tests {
 
     #[test]
     fn test_strip_bom() -> error::Result<()> {
-        let mut reader = Reader::new(Cursor::new("name,surname,age"), b',', b'"');
+        let mut reader = Reader::from_reader(Cursor::new("name,surname,age"));
         reader.strip_bom()?;
 
         assert_eq!(
@@ -202,7 +248,7 @@ mod tests {
             brec!["name", "surname", "age"]
         );
 
-        let mut reader = Reader::new(Cursor::new(b"\xef\xbb\xbfname,surname,age"), b',', b'"');
+        let mut reader = Reader::from_reader(Cursor::new(b"\xef\xbb\xbfname,surname,age"));
         reader.strip_bom()?;
 
         assert_eq!(
@@ -218,7 +264,7 @@ mod tests {
         let data = "name\n\"\"\nlucy\n\"\"";
 
         // Read
-        let reader = Reader::new(Cursor::new(data), b',', b'"');
+        let reader = Reader::from_reader(Cursor::new(data));
 
         let expected = vec![brec!["name"], brec![""], brec!["lucy"], brec![""]];
 
@@ -231,11 +277,9 @@ mod tests {
 
     #[test]
     fn test_crlf() -> error::Result<()> {
-        let reader = Reader::new(
-            Cursor::new("name,surname\r\nlucy,\"john\"\r\nevan,zhong\r\nbéatrice,glougou\r\n"),
-            b',',
-            b'"',
-        );
+        let reader = Reader::from_reader(Cursor::new(
+            "name,surname\r\nlucy,\"john\"\r\nevan,zhong\r\nbéatrice,glougou\r\n",
+        ));
 
         let expected = vec![
             brec!["name", "surname"],
@@ -253,11 +297,9 @@ mod tests {
 
     #[test]
     fn test_quote_always() -> error::Result<()> {
-        let reader = Reader::new(
-            Cursor::new("\"name\",\"surname\"\n\"lucy\",\"rose\"\n\"john\",\"mayhew\""),
-            b',',
-            b'"',
-        );
+        let reader = Reader::from_reader(Cursor::new(
+            "\"name\",\"surname\"\n\"lucy\",\"rose\"\n\"john\",\"mayhew\"",
+        ));
 
         let expected = vec![
             brec!["name", "surname"],

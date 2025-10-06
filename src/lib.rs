@@ -15,7 +15,7 @@ mod zero_copy_reader;
 
 pub use error::{Error, ErrorKind};
 pub use line_reader::LineReader;
-pub use reader::Reader;
+pub use reader::{Reader, ReaderBuilder};
 pub use records::{ByteRecord, ZeroCopyByteRecord};
 pub use searcher::Searcher;
 pub use splitter::{Splitter, SplitterBuilder};

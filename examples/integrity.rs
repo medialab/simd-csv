@@ -31,12 +31,9 @@ fn main() -> anyhow::Result<()> {
     let mut writer = csv::WriterBuilder::new().from_writer(std::io::stdout());
 
     if args.simd {
-        let mut reader = simd_csv::Reader::with_capacity(
-            BUFFERED_READER_DEFAULT_CAPACITY,
-            file,
-            delimiter,
-            b'"',
-        );
+        let mut reader = simd_csv::ReaderBuilder::with_capacity(BUFFERED_READER_DEFAULT_CAPACITY)
+            .delimiter(args.delimiter())
+            .from_reader(File::open(&args.path)?);
         let mut record = simd_csv::ByteRecord::new();
 
         while reader.read_byte_record(&mut record)? {

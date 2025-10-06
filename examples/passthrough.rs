@@ -33,8 +33,9 @@ fn main() -> anyhow::Result<()> {
     let file = File::open(&args.path)?;
 
     if args.simd {
-        let mut reader =
-            simd_csv::Reader::with_capacity(DEFAULT_CAPACITY, file, delimiter, b'"');
+        let mut reader = simd_csv::ReaderBuilder::with_capacity(DEFAULT_CAPACITY)
+            .delimiter(delimiter)
+            .from_reader(file);
 
         let mut record = simd_csv::ByteRecord::new();
 
