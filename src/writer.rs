@@ -5,30 +5,84 @@ use memchr::{memchr, memchr3};
 use crate::error::{self, Error};
 use crate::records::ByteRecord;
 
+pub struct WriterBuilder {
+    delimiter: u8,
+    quote: u8,
+    buffer_capacity: Option<usize>,
+    flexible: bool,
+}
+
+impl Default for WriterBuilder {
+    fn default() -> Self {
+        Self {
+            delimiter: b',',
+            quote: b'"',
+            buffer_capacity: None,
+            flexible: false,
+        }
+    }
+}
+
+impl WriterBuilder {
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    pub fn with_capacity(capacity: usize) -> Self {
+        let mut builder = Self::default();
+        builder.buffer_capacity(capacity);
+        builder
+    }
+
+    pub fn delimiter(&mut self, delimiter: u8) -> &mut Self {
+        self.delimiter = delimiter;
+        self
+    }
+
+    pub fn quote(&mut self, quote: u8) -> &mut Self {
+        self.quote = quote;
+        self
+    }
+
+    pub fn buffer_capacity(&mut self, capacity: usize) -> &mut Self {
+        self.buffer_capacity = Some(capacity);
+        self
+    }
+
+    pub fn flexible(&mut self, yes: bool) -> &mut Self {
+        self.flexible = yes;
+        self
+    }
+
+    fn bufwriter<W: Write>(&self, writer: W) -> BufWriter<W> {
+        match self.buffer_capacity {
+            None => BufWriter::new(writer),
+            Some(capacity) => BufWriter::with_capacity(capacity, writer),
+        }
+    }
+
+    pub fn from_writer<W: Write>(&self, writer: W) -> Writer<W> {
+        Writer {
+            delimiter: self.delimiter,
+            quote: self.quote,
+            buffer: self.bufwriter(writer),
+            flexible: self.flexible,
+            field_count: None,
+        }
+    }
+}
+
 pub struct Writer<W: Write> {
     delimiter: u8,
     quote: u8,
     buffer: BufWriter<W>,
+    flexible: bool,
     field_count: Option<usize>,
 }
 
 impl<W: Write> Writer<W> {
-    pub fn new(writer: W, delimiter: u8, quote: u8) -> Self {
-        Self {
-            buffer: BufWriter::new(writer),
-            quote,
-            delimiter,
-            field_count: None,
-        }
-    }
-
-    pub fn with_capacity(capacity: usize, writer: W, delimiter: u8, quote: u8) -> Self {
-        Self {
-            buffer: BufWriter::with_capacity(capacity, writer),
-            quote,
-            delimiter,
-            field_count: None,
-        }
+    pub fn from_writer(writer: W) -> Self {
+        WriterBuilder::new().from_writer(writer)
     }
 
     #[inline(always)]
@@ -40,6 +94,10 @@ impl<W: Write> Writer<W> {
 
     #[inline]
     fn check_field_count(&mut self, written: usize) -> error::Result<()> {
+        if self.flexible {
+            return Ok(());
+        }
+
         match self.field_count {
             Some(expected) => {
                 if written != expected {
@@ -212,7 +270,7 @@ mod tests {
     #[test]
     fn test_write_byte_record() -> io::Result<()> {
         let output = Cursor::new(Vec::<u8>::new());
-        let mut writer = Writer::with_capacity(32, output, b',', b'"');
+        let mut writer = WriterBuilder::with_capacity(32).from_writer(output);
 
         writer.write_byte_record_no_quoting(&brec!["name", "surname", "age"])?;
         writer.write_byte_record(&brec!["john,", "landis", "45"])?;
@@ -230,7 +288,7 @@ mod tests {
     fn test_write_empty_cells() {
         fn write(record: &ByteRecord) -> String {
             let output = Cursor::new(Vec::<u8>::new());
-            let mut writer = Writer::new(output, b',', b'"');
+            let mut writer = Writer::from_writer(output);
             writer.write_byte_record(record).unwrap();
             String::from_utf8_lossy(&writer.into_inner().unwrap().into_inner()).into_owned()
         }

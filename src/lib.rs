@@ -14,4 +14,4 @@ pub use line_buffer::LineBuffer;
 pub use reader::{BufferedReader, TotalReader};
 pub use records::{ByteRecord, ZeroCopyByteRecord};
 pub use searcher::Searcher;
-pub use writer::Writer;
+pub use writer::{Writer, WriterBuilder};

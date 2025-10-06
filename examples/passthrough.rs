@@ -38,8 +38,9 @@ fn main() -> anyhow::Result<()> {
 
         let mut record = simd_csv::ByteRecord::new();
 
-        let mut writer =
-            simd_csv::Writer::with_capacity(DEFAULT_CAPACITY, std::io::stdout(), delimiter, b'"');
+        let mut writer = simd_csv::WriterBuilder::with_capacity(DEFAULT_CAPACITY)
+            .delimiter(delimiter)
+            .from_writer(std::io::stdout());
 
         while reader.read_byte_record(&mut record)? {
             if !args.only_read {
