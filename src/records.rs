@@ -18,17 +18,19 @@ impl<'a> ZeroCopyByteRecord<'a> {
         }
     }
 
-    #[inline]
+    #[inline(always)]
     pub fn len(&self) -> usize {
+        // NOTE: an empty zero copy record cannot be constructed,
+        // by definition.
         self.seps.len() + 1
     }
 
-    #[inline]
+    #[inline(always)]
     pub fn is_empty(&self) -> bool {
-        self.len() == 0
+        false
     }
 
-    #[inline]
+    #[inline(always)]
     pub fn as_slice(&self) -> &[u8] {
         self.slice
     }
@@ -37,9 +39,50 @@ impl<'a> ZeroCopyByteRecord<'a> {
     pub fn iter(&self) -> ZeroCopyRecordIter<'_> {
         ZeroCopyRecordIter {
             record: self,
-            current_sep_index: 0,
-            offset: 0,
+            current: 0,
         }
+    }
+
+    #[inline]
+    pub fn get(&self, index: usize) -> Option<&[u8]> {
+        let len = self.seps.len();
+
+        if index > len {
+            return None;
+        }
+
+        let start = if index == 0 {
+            0
+        } else {
+            self.seps[index - 1] + 1
+        };
+
+        let end = if index == len {
+            self.slice.len()
+        } else {
+            self.seps[index]
+        };
+
+        Some(&self.slice[start..end])
+    }
+
+    #[inline]
+    pub fn is_quoted(&self, index: usize, quote: u8) -> bool {
+        let cell = self.get(index).unwrap();
+        cell.len() > 1 && cell[0] == quote
+    }
+
+    #[inline]
+    pub fn unquote(&self, index: usize, quote: u8) -> Option<&[u8]> {
+        self.get(index).map(|cell| {
+            let len = cell.len();
+
+            if len > 1 && cell[0] == quote {
+                &cell[1..len - 1]
+            } else {
+                cell
+            }
+        })
     }
 }
 
@@ -56,36 +99,29 @@ impl<'a> fmt::Debug for ZeroCopyByteRecord<'a> {
 
 pub struct ZeroCopyRecordIter<'a> {
     record: &'a ZeroCopyByteRecord<'a>,
-    current_sep_index: usize,
-    offset: usize,
+    current: usize,
 }
 
 impl<'a> Iterator for ZeroCopyRecordIter<'a> {
     type Item = &'a [u8];
 
     fn next(&mut self) -> Option<Self::Item> {
-        let seps = &self.record.seps;
-        let len = seps.len();
+        let cell = self.record.get(self.current);
 
-        if self.current_sep_index > len {
-            return None;
+        if cell.is_some() {
+            self.current += 1;
         }
 
-        let offset = self.offset;
+        cell
+    }
+}
 
-        let end = if self.current_sep_index < len {
-            let sep = seps[self.current_sep_index];
-            self.offset = sep + 1;
-            sep
-        } else {
-            // Last field
-            self.offset = self.record.slice.len();
-            self.offset
-        };
+impl<'a> Index<usize> for ZeroCopyByteRecord<'a> {
+    type Output = [u8];
 
-        self.current_sep_index += 1;
-
-        Some(&self.record.slice[offset..end])
+    #[inline]
+    fn index(&self, i: usize) -> &[u8] {
+        self.get(i).unwrap()
     }
 }
 
@@ -297,6 +333,12 @@ mod tests {
 
         let expected: Vec<&[u8]> = vec![b"name", b"surname", b"age"];
         assert_eq!(record.iter().collect::<Vec<_>>(), expected);
+
+        for i in 0..expected.len() {
+            assert_eq!(record.get(i), Some(expected[i]));
+        }
+
+        assert_eq!(record.get(4), None);
     }
 
     #[test]
