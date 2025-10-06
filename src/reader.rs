@@ -3,24 +3,18 @@ use std::io::{BufRead, BufReader, Read};
 use crate::core::{self, ReadResult};
 use crate::error::{self, Error};
 use crate::ext::StripBom;
-use crate::records::{ByteRecord, ByteRecordBuilder, ZeroCopyByteRecord};
+use crate::records::{ByteRecord, ByteRecordBuilder};
 
-pub struct BufferedReader<R> {
+pub struct Reader<R> {
     buffer: BufReader<R>,
-    scratch: Vec<u8>,
-    seps: Vec<usize>,
-    actual_buffer_position: Option<usize>,
     inner: core::CoreReader,
     field_count: Option<usize>,
 }
 
-impl<R: Read> BufferedReader<R> {
+impl<R: Read> Reader<R> {
     pub fn new(reader: R, delimiter: u8, quote: u8) -> Self {
         Self {
             buffer: BufReader::new(reader),
-            scratch: Vec::new(),
-            seps: Vec::new(),
-            actual_buffer_position: None,
             inner: core::CoreReader::new(delimiter, quote),
             field_count: None,
         }
@@ -29,9 +23,6 @@ impl<R: Read> BufferedReader<R> {
     pub fn with_capacity(capacity: usize, reader: R, delimiter: u8, quote: u8) -> Self {
         Self {
             buffer: BufReader::with_capacity(capacity, reader),
-            scratch: Vec::new(),
-            seps: Vec::new(),
-            actual_buffer_position: None,
             inner: core::CoreReader::new(delimiter, quote),
             field_count: None,
         }
@@ -84,66 +75,12 @@ impl<R: Read> BufferedReader<R> {
         }
     }
 
-    pub fn read_zero_copy_byte_record(&mut self) -> error::Result<Option<ZeroCopyByteRecord<'_>>> {
-        use ReadResult::*;
-
-        self.scratch.clear();
-        self.seps.clear();
-
-        if let Some(last_pos) = self.actual_buffer_position.take() {
-            self.buffer.consume(last_pos);
-        }
-
-        loop {
-            let input = self.buffer.fill_buf()?;
-
-            let (result, pos) = self.inner.split_record_and_find_separators(
-                input,
-                self.scratch.len(),
-                &mut self.seps,
-            );
-
-            match result {
-                End => {
-                    self.buffer.consume(pos);
-                    return Ok(None);
-                }
-                Cr | Lf => {
-                    self.buffer.consume(pos);
-                }
-                InputEmpty => {
-                    self.scratch.extend_from_slice(input);
-                    self.buffer.consume(pos);
-                }
-                Record => {
-                    if self.scratch.is_empty() {
-                        self.check_field_count(self.seps.len() + 1)?;
-                        self.actual_buffer_position = Some(pos);
-                        return Ok(Some(ZeroCopyByteRecord::new(
-                            &self.buffer.buffer()[..pos],
-                            &self.seps,
-                        )));
-                    } else {
-                        self.scratch.extend_from_slice(&input[..pos]);
-                        self.buffer.consume(pos);
-                        self.check_field_count(self.seps.len() + 1)?;
-                        return Ok(Some(ZeroCopyByteRecord::new(&self.scratch, &self.seps)));
-                    }
-                }
-            };
-        }
-    }
-
     pub fn read_byte_record(&mut self, record: &mut ByteRecord) -> error::Result<bool> {
         use ReadResult::*;
 
         record.clear();
 
         let mut record_builder = ByteRecordBuilder::wrap(record);
-
-        if let Some(last_pos) = self.actual_buffer_position.take() {
-            self.buffer.consume(last_pos);
-        }
 
         loop {
             let input = self.buffer.fill_buf()?;
@@ -183,7 +120,7 @@ impl<R: Read> BufferedReader<R> {
 }
 
 pub struct ByteRecordsIter<'r, R> {
-    reader: &'r mut BufferedReader<R>,
+    reader: &'r mut Reader<R>,
     record: ByteRecord,
 }
 
@@ -202,7 +139,7 @@ impl<'r, R: Read> Iterator for ByteRecordsIter<'r, R> {
 }
 
 pub struct ByteRecordsIntoIter<R> {
-    reader: BufferedReader<R>,
+    reader: Reader<R>,
     record: ByteRecord,
 }
 
@@ -229,44 +166,6 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_read_zero_copy_byte_record() -> error::Result<()> {
-        let csv = "name,surname,age\n\"john\",\"landy, the \"\"everlasting\"\" bastard\",45\nlucy,rose,\"67\"\njermaine,jackson,\"89\"\n\nkarine,loucan,\"52\"\nrose,\"glib\",12\n\"guillaume\",\"plique\",\"42\"\r\n";
-
-        let mut reader = BufferedReader::with_capacity(32, Cursor::new(csv), b',', b'"');
-        let mut records = Vec::new();
-
-        let expected = vec![
-            vec!["name", "surname", "age"],
-            vec![
-                "\"john\"",
-                "\"landy, the \"\"everlasting\"\" bastard\"",
-                "45",
-            ],
-            vec!["lucy", "rose", "\"67\""],
-            vec!["jermaine", "jackson", "\"89\""],
-            vec!["karine", "loucan", "\"52\""],
-            vec!["rose", "\"glib\"", "12"],
-            vec!["\"guillaume\"", "\"plique\"", "\"42\""],
-        ]
-        .into_iter()
-        .map(|record| {
-            record
-                .into_iter()
-                .map(|cell| cell.as_bytes().to_vec())
-                .collect::<Vec<_>>()
-        })
-        .collect::<Vec<_>>();
-
-        while let Some(record) = reader.read_zero_copy_byte_record()? {
-            records.push(record.iter().map(|cell| cell.to_vec()).collect::<Vec<_>>());
-        }
-
-        assert_eq!(records, expected);
-
-        Ok(())
-    }
-
-    #[test]
     fn test_read_byte_record() -> error::Result<()> {
         let csv = "name,surname,age\n\"john\",\"landy, the \"\"everlasting\"\" bastard\",45\n\"\"\"ok\"\"\",whatever,dude\nlucy,rose,\"67\"\njermaine,jackson,\"89\"\n\nkarine,loucan,\"52\"\nrose,\"glib\",12\n\"guillaume\",\"plique\",\"42\"\r\n";
 
@@ -282,7 +181,7 @@ mod tests {
         ];
 
         for capacity in [32usize, 4, 3, 2, 1] {
-            let mut reader = BufferedReader::with_capacity(capacity, Cursor::new(csv), b',', b'"');
+            let mut reader = Reader::with_capacity(capacity, Cursor::new(csv), b',', b'"');
 
             assert_eq!(
                 reader.byte_records().collect::<Result<Vec<_>, _>>()?,
@@ -295,7 +194,7 @@ mod tests {
 
     #[test]
     fn test_strip_bom() -> error::Result<()> {
-        let mut reader = BufferedReader::new(Cursor::new("name,surname,age"), b',', b'"');
+        let mut reader = Reader::new(Cursor::new("name,surname,age"), b',', b'"');
         reader.strip_bom()?;
 
         assert_eq!(
@@ -303,8 +202,7 @@ mod tests {
             brec!["name", "surname", "age"]
         );
 
-        let mut reader =
-            BufferedReader::new(Cursor::new(b"\xef\xbb\xbfname,surname,age"), b',', b'"');
+        let mut reader = Reader::new(Cursor::new(b"\xef\xbb\xbfname,surname,age"), b',', b'"');
         reader.strip_bom()?;
 
         assert_eq!(
@@ -319,26 +217,8 @@ mod tests {
     fn test_empty_row() -> error::Result<()> {
         let data = "name\n\"\"\nlucy\n\"\"";
 
-        // Zero-copy
-        let mut reader = BufferedReader::new(Cursor::new(data), b',', b'"');
-
-        let expected = vec![
-            vec!["name".as_bytes().to_vec()],
-            vec!["\"\"".as_bytes().to_vec()],
-            vec!["lucy".as_bytes().to_vec()],
-            vec!["\"\"".as_bytes().to_vec()],
-        ];
-
         // Read
-        let mut records = Vec::new();
-
-        while let Some(record) = reader.read_zero_copy_byte_record()? {
-            records.push(vec![record.as_slice().to_vec()]);
-        }
-
-        assert_eq!(records, expected);
-
-        let reader = BufferedReader::new(Cursor::new(data), b',', b'"');
+        let reader = Reader::new(Cursor::new(data), b',', b'"');
 
         let expected = vec![brec!["name"], brec![""], brec!["lucy"], brec![""]];
 
@@ -351,7 +231,7 @@ mod tests {
 
     #[test]
     fn test_crlf() -> error::Result<()> {
-        let reader = BufferedReader::new(
+        let reader = Reader::new(
             Cursor::new("name,surname\r\nlucy,\"john\"\r\nevan,zhong\r\nbéatrice,glougou\r\n"),
             b',',
             b'"',
@@ -373,7 +253,7 @@ mod tests {
 
     #[test]
     fn test_quote_always() -> error::Result<()> {
-        let reader = BufferedReader::new(
+        let reader = Reader::new(
             Cursor::new("\"name\",\"surname\"\n\"lucy\",\"rose\"\n\"john\",\"mayhew\""),
             b',',
             b'"',

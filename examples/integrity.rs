@@ -31,7 +31,7 @@ fn main() -> anyhow::Result<()> {
     let mut writer = csv::WriterBuilder::new().from_writer(std::io::stdout());
 
     if args.simd {
-        let mut reader = simd_csv::BufferedReader::with_capacity(
+        let mut reader = simd_csv::Reader::with_capacity(
             BUFFERED_READER_DEFAULT_CAPACITY,
             file,
             delimiter,

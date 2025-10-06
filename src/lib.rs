@@ -11,12 +11,14 @@ mod splitter;
 mod total_reader;
 mod utils;
 mod writer;
+mod zero_copy_reader;
 
 pub use error::{Error, ErrorKind};
 pub use line_reader::LineReader;
-pub use reader::BufferedReader;
+pub use reader::Reader;
 pub use records::{ByteRecord, ZeroCopyByteRecord};
 pub use searcher::Searcher;
 pub use splitter::{Splitter, SplitterBuilder};
 pub use total_reader::{TotalReader, TotalReaderBuilder};
 pub use writer::{Writer, WriterBuilder};
+pub use zero_copy_reader::{ZeroCopyReader, ZeroCopyReaderBuilder};

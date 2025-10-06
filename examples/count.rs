@@ -46,8 +46,16 @@ impl Args {
         )
     }
 
-    fn simd_buffered_reader(&self) -> csv::Result<simd_csv::BufferedReader<File>> {
-        Ok(simd_csv::BufferedReader::with_capacity(
+    fn simd_zero_copy_reader(&self) -> csv::Result<simd_csv::ZeroCopyReader<File>> {
+        Ok(
+            simd_csv::ZeroCopyReaderBuilder::with_capacity(BUFFERED_READER_DEFAULT_CAPACITY)
+                .delimiter(self.delimiter())
+                .from_reader(File::open(&self.path)?),
+        )
+    }
+
+    fn simd_buffered_reader(&self) -> csv::Result<simd_csv::Reader<File>> {
+        Ok(simd_csv::Reader::with_capacity(
             BUFFERED_READER_DEFAULT_CAPACITY,
             File::open(&self.path)?,
             self.delimiter(),
@@ -106,12 +114,12 @@ fn main() -> anyhow::Result<()> {
             println!("{}", reader.count_records());
         }
         CountingMode::ZeroCopy => {
-            let mut reader = args.simd_buffered_reader()?;
+            let mut reader = args.simd_zero_copy_reader()?;
 
             let mut count: u64 = 0;
             let mut alignment: Option<usize> = None;
 
-            while let Some(record) = reader.read_zero_copy_byte_record()? {
+            while let Some(record) = reader.read_byte_record()? {
                 if args.check_alignment {
                     match alignment {
                         None => {
