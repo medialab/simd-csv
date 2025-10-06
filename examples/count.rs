@@ -99,7 +99,9 @@ fn main() -> anyhow::Result<()> {
 
             let map = unsafe { Mmap::map(&file).unwrap() };
 
-            let mut reader = simd_csv::TotalReader::new(args.delimiter(), b'"', &map);
+            let mut reader = simd_csv::TotalReaderBuilder::new()
+                .delimiter(args.delimiter())
+                .from_bytes(&map);
 
             println!("{}", reader.count_records());
         }
@@ -146,7 +148,9 @@ fn main() -> anyhow::Result<()> {
 
             let map = unsafe { Mmap::map(&file).unwrap() };
 
-            let mut reader = simd_csv::TotalReader::new(args.delimiter(), b'"', &map);
+            let mut reader = simd_csv::TotalReaderBuilder::new()
+                .delimiter(args.delimiter())
+                .from_bytes(&map);
             let mut record = simd_csv::ByteRecord::new();
 
             let mut count: u64 = 0;

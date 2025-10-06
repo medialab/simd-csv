@@ -8,13 +8,15 @@ mod reader;
 mod records;
 mod searcher;
 mod splitter;
+mod total_reader;
 mod utils;
 mod writer;
 
 pub use error::{Error, ErrorKind};
 pub use line_reader::LineReader;
-pub use reader::{BufferedReader, TotalReader};
+pub use reader::BufferedReader;
 pub use records::{ByteRecord, ZeroCopyByteRecord};
 pub use searcher::Searcher;
 pub use splitter::{Splitter, SplitterBuilder};
+pub use total_reader::{TotalReader, TotalReaderBuilder};
 pub use writer::{Writer, WriterBuilder};
