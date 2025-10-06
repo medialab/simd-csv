@@ -1,8 +1,9 @@
+use std::borrow::Cow;
 use std::fmt;
 use std::ops::Index;
 
 use crate::debug;
-use crate::utils::trim_trailing_crlf;
+use crate::utils::{trim_trailing_crlf, unescape};
 
 pub struct ZeroCopyByteRecord<'a> {
     slice: &'a [u8],
@@ -83,6 +84,11 @@ impl<'a> ZeroCopyByteRecord<'a> {
                 cell
             }
         })
+    }
+
+    #[inline]
+    pub fn unescape(&self, index: usize, quote: u8) -> Option<Cow<[u8]>> {
+        self.unquote(index, quote).map(|cell| unescape(cell, quote))
     }
 }
 
