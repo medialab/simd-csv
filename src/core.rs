@@ -4,7 +4,7 @@ use crate::records::ByteRecordBuilder;
 use crate::searcher::Searcher;
 use crate::utils::trim_trailing_cr;
 
-#[derive(Debug)]
+#[derive(Debug, Clone, Copy)]
 pub enum ReadResult {
     InputEmpty,
     Cr,
@@ -13,7 +13,7 @@ pub enum ReadResult {
     End,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone, Copy)]
 enum ReadState {
     Unquoted,
     Quoted,
@@ -22,7 +22,7 @@ enum ReadState {
 
 // NOTE: funnily enough, knowing the delimiter is not required to split the records,
 // but since we expose a single unified `struct` here, it is simpler to include it.
-pub(crate) struct Reader {
+pub(crate) struct CoreReader {
     delimiter: u8,
     quote: u8,
     state: ReadState,
@@ -30,7 +30,7 @@ pub(crate) struct Reader {
     searcher: Searcher,
 }
 
-impl Reader {
+impl CoreReader {
     pub(crate) fn new(delimiter: u8, quote: u8) -> Self {
         Self {
             delimiter,

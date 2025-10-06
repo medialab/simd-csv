@@ -10,7 +10,7 @@ pub struct BufferedReader<R> {
     scratch: Vec<u8>,
     seps: Vec<usize>,
     actual_buffer_position: Option<usize>,
-    inner: core::Reader,
+    inner: core::CoreReader,
     field_count: Option<usize>,
 }
 
@@ -21,7 +21,7 @@ impl<R: Read> BufferedReader<R> {
             scratch: Vec::new(),
             seps: Vec::new(),
             actual_buffer_position: None,
-            inner: core::Reader::new(delimiter, quote),
+            inner: core::CoreReader::new(delimiter, quote),
             field_count: None,
         }
     }
@@ -32,7 +32,7 @@ impl<R: Read> BufferedReader<R> {
             scratch: Vec::new(),
             seps: Vec::new(),
             actual_buffer_position: None,
-            inner: core::Reader::new(delimiter, quote),
+            inner: core::CoreReader::new(delimiter, quote),
             field_count: None,
         }
     }
@@ -81,71 +81,6 @@ impl<R: Read> BufferedReader<R> {
 
                 Ok(record)
             }
-        }
-    }
-
-    pub fn count_records(&mut self) -> error::Result<u64> {
-        use ReadResult::*;
-
-        let mut count: u64 = 0;
-
-        loop {
-            let input = self.buffer.fill_buf()?;
-
-            let (result, pos) = self.inner.split_record(input);
-
-            self.buffer.consume(pos);
-
-            match result {
-                End => break,
-                InputEmpty | Cr | Lf => continue,
-                Record => {
-                    count += 1;
-                }
-            };
-        }
-
-        Ok(count)
-    }
-
-    pub fn split_record(&mut self) -> error::Result<Option<&[u8]>> {
-        use ReadResult::*;
-
-        self.scratch.clear();
-
-        if let Some(last_pos) = self.actual_buffer_position.take() {
-            self.buffer.consume(last_pos);
-        }
-
-        loop {
-            let input = self.buffer.fill_buf()?;
-
-            let (result, pos) = self.inner.split_record(input);
-
-            match result {
-                End => {
-                    self.buffer.consume(pos);
-                    return Ok(None);
-                }
-                Cr | Lf => {
-                    self.buffer.consume(pos);
-                }
-                InputEmpty => {
-                    self.scratch.extend_from_slice(input);
-                    self.buffer.consume(pos);
-                }
-                Record => {
-                    if self.scratch.is_empty() {
-                        self.actual_buffer_position = Some(pos);
-                        return Ok(Some(&self.buffer.buffer()[..pos]));
-                    } else {
-                        self.scratch.extend_from_slice(&input[..pos]);
-                        self.buffer.consume(pos);
-
-                        return Ok(Some(&self.scratch));
-                    }
-                }
-            };
         }
     }
 
@@ -288,7 +223,7 @@ impl<R: Read> Iterator for ByteRecordsIntoIter<R> {
 // NOTE: a reader to be used when the whole data fits into memory or when using
 // memory maps.
 pub struct TotalReader<'b> {
-    inner: core::Reader,
+    inner: core::CoreReader,
     bytes: &'b [u8],
     pos: usize,
 }
@@ -296,7 +231,7 @@ pub struct TotalReader<'b> {
 impl<'b> TotalReader<'b> {
     pub fn new(delimiter: u8, quote: u8, bytes: &'b [u8]) -> Self {
         Self {
-            inner: core::Reader::new(delimiter, quote),
+            inner: core::CoreReader::new(delimiter, quote),
             bytes,
             pos: 0,
         }
@@ -360,58 +295,6 @@ mod tests {
     use crate::brec;
 
     use super::*;
-
-    fn count_records(data: &str, capacity: usize) -> u64 {
-        let mut splitter = BufferedReader::with_capacity(capacity, Cursor::new(data), b',', b'"');
-        splitter.count_records().unwrap()
-    }
-
-    #[test]
-    fn test_count() {
-        // Empty
-        assert_eq!(count_records("", 1024), 0);
-
-        // Single cells with various empty lines
-        let tests = vec![
-            "name\njohn\nlucy",
-            "name\njohn\nlucy\n",
-            "name\n\njohn\r\nlucy\n",
-            "name\n\njohn\r\nlucy\n\n",
-            "name\n\n\njohn\r\n\r\nlucy\n\n\n",
-            "\nname\njohn\nlucy",
-            "\n\nname\njohn\nlucy",
-            "\r\n\r\nname\njohn\nlucy",
-            "name\njohn\nlucy\r\n",
-            "name\njohn\nlucy\r\n\r\n",
-        ];
-
-        for capacity in [32usize, 4, 3, 2, 1] {
-            for test in tests.iter() {
-                assert_eq!(
-                    count_records(test, capacity),
-                    3,
-                    "capacity={} string={:?}",
-                    capacity,
-                    test
-                );
-            }
-        }
-
-        // Multiple cells
-        let data = "name,surname,age\njohn,landy,45\nlucy,rose,67";
-        assert_eq!(count_records(data, 1024), 3);
-
-        // Quoting
-        for capacity in [1024usize, 32usize, 4, 3, 2, 1] {
-            let data = "name,surname,age\n\"john\",\"landy, the \"\"everlasting\"\" bastard\",45\nlucy,rose,\"67\"\njermaine,jackson,\"89\"\n\nkarine,loucan,\"52\"\r\n";
-
-            assert_eq!(count_records(data, capacity), 5, "capacity={}", capacity);
-        }
-
-        // Different separator
-        let data = "name\tsurname\tage\njohn\tlandy\t45\nlucy\trose\t67";
-        assert_eq!(count_records(data, 1024), 3);
-    }
 
     #[test]
     fn test_read_zero_copy_byte_record() -> error::Result<()> {
@@ -503,11 +386,6 @@ mod tests {
     #[test]
     fn test_empty_row() -> error::Result<()> {
         let data = "name\n\"\"\nlucy\n\"\"";
-
-        // Counting
-        let mut reader = BufferedReader::new(Cursor::new(data), b',', b'"');
-
-        assert_eq!(reader.count_records()?, 4);
 
         // Zero-copy
         let mut reader = BufferedReader::new(Cursor::new(data), b',', b'"');

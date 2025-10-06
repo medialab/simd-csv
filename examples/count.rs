@@ -38,6 +38,14 @@ impl Args {
         }
     }
 
+    fn simd_splitter(&self) -> csv::Result<simd_csv::Splitter<File>> {
+        Ok(
+            simd_csv::SplitterBuilder::with_capacity(BUFFERED_READER_DEFAULT_CAPACITY)
+                .delimiter(self.delimiter())
+                .from_reader(File::open(&self.path)?),
+        )
+    }
+
     fn simd_buffered_reader(&self) -> csv::Result<simd_csv::BufferedReader<File>> {
         Ok(simd_csv::BufferedReader::with_capacity(
             BUFFERED_READER_DEFAULT_CAPACITY,
@@ -71,16 +79,16 @@ fn main() -> anyhow::Result<()> {
             println!("{}", count);
         }
         CountingMode::Simd => {
-            let mut reader = args.simd_buffered_reader()?;
+            let mut splitter = args.simd_splitter()?;
 
-            println!("{}", reader.count_records()?);
+            println!("{}", splitter.count_records()?);
         }
         CountingMode::Split => {
-            let mut reader = args.simd_buffered_reader()?;
+            let mut splitter = args.simd_splitter()?;
 
             let mut count: u64 = 0;
 
-            while let Some(_) = reader.split_record()? {
+            while let Some(_) = splitter.split_record()? {
                 count += 1;
             }
 
@@ -152,7 +160,7 @@ fn main() -> anyhow::Result<()> {
         CountingMode::Lines => {
             let file = File::open(&args.path)?;
 
-            let mut reader = simd_csv::LineBuffer::new(file);
+            let mut reader = simd_csv::LineReader::new(file);
 
             println!("{}", reader.count_lines()?);
         }
