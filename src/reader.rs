@@ -108,7 +108,7 @@ impl<R: Read> Reader<R> {
         Ok(())
     }
 
-    pub fn first_byte_record(&mut self, consume: bool) -> error::Result<ByteRecord> {
+    pub fn peek_byte_record(&mut self, consume: bool) -> error::Result<ByteRecord> {
         use ReadResult::*;
 
         let mut record = ByteRecord::new();
