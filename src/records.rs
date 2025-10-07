@@ -257,6 +257,8 @@ pub struct ByteRecordIter<'a> {
     current: usize,
 }
 
+impl<'a> ExactSizeIterator for ByteRecordIter<'a> {}
+
 impl<'a> Iterator for ByteRecordIter<'a> {
     type Item = &'a [u8];
 
@@ -271,6 +273,21 @@ impl<'a> Iterator for ByteRecordIter<'a> {
 
             Some(&self.record.data[start..end])
         }
+    }
+
+    #[inline]
+    fn size_hint(&self) -> (usize, Option<usize>) {
+        let size = self.record.len() - self.current;
+
+        (size, Some(size))
+    }
+
+    #[inline]
+    fn count(self) -> usize
+    where
+        Self: Sized,
+    {
+        self.len()
     }
 }
 
