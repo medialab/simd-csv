@@ -1,0 +1,19 @@
+shell(
+  "/usr/bin/time -f %e wc -l {} 2>&1".fmt(path)
+).split("\n")[-1] as wc,
+
+shell(
+  "/usr/bin/time -f %e ./target/release/examples/count baseline {} 2>&1".fmt(path)
+).split("\n")[-1] as baseline,
+
+shell(
+  "/usr/bin/time -f %e ./target/release/examples/count split {} 2>&1".fmt(path)
+).split("\n")[-1] as split,
+
+shell(
+  "/usr/bin/time -f %e ./target/release/examples/count zero-copy {} 2>&1".fmt(path)
+).split("\n")[-1] as zero_copy,
+
+shell(
+  "/usr/bin/time -f %e ./target/release/examples/count copy {} 2>&1".fmt(path)
+).split("\n")[-1] as copy
