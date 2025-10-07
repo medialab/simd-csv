@@ -9,6 +9,7 @@ pub struct ZeroCopyReaderBuilder {
     delimiter: u8,
     quote: u8,
     buffer_capacity: Option<usize>,
+    flexible: bool,
 }
 
 impl Default for ZeroCopyReaderBuilder {
@@ -17,6 +18,7 @@ impl Default for ZeroCopyReaderBuilder {
             delimiter: b',',
             quote: b'"',
             buffer_capacity: None,
+            flexible: false,
         }
     }
 }
@@ -47,12 +49,18 @@ impl ZeroCopyReaderBuilder {
         self
     }
 
+    pub fn flexible(&mut self, yes: bool) -> &mut Self {
+        self.flexible = yes;
+        self
+    }
+
     pub fn from_reader<R: Read>(&self, reader: R) -> ZeroCopyReader<R> {
         ZeroCopyReader {
             buffer: ScratchBuffer::with_optional_capacity(self.buffer_capacity, reader),
             inner: CoreReader::new(self.delimiter, self.quote),
             field_count: None,
             seps: Vec::new(),
+            flexible: self.flexible,
         }
     }
 }
@@ -62,6 +70,7 @@ pub struct ZeroCopyReader<R> {
     inner: CoreReader,
     field_count: Option<usize>,
     seps: Vec<usize>,
+    flexible: bool,
 }
 
 impl<R: Read> ZeroCopyReader<R> {
@@ -71,6 +80,10 @@ impl<R: Read> ZeroCopyReader<R> {
 
     #[inline]
     fn check_field_count(&mut self, written: usize) -> error::Result<()> {
+        if self.flexible {
+            return Ok(());
+        }
+
         match self.field_count {
             Some(expected) => {
                 if written != expected {

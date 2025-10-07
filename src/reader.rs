@@ -9,6 +9,7 @@ pub struct ReaderBuilder {
     delimiter: u8,
     quote: u8,
     buffer_capacity: Option<usize>,
+    flexible: bool,
 }
 
 impl Default for ReaderBuilder {
@@ -17,6 +18,7 @@ impl Default for ReaderBuilder {
             delimiter: b',',
             quote: b'"',
             buffer_capacity: None,
+            flexible: false,
         }
     }
 }
@@ -47,6 +49,11 @@ impl ReaderBuilder {
         self
     }
 
+    pub fn flexible(&mut self, yes: bool) -> &mut Self {
+        self.flexible = yes;
+        self
+    }
+
     fn bufreader<R: Read>(&self, reader: R) -> BufReader<R> {
         match self.buffer_capacity {
             None => BufReader::new(reader),
@@ -59,6 +66,7 @@ impl ReaderBuilder {
             buffer: self.bufreader(reader),
             inner: CoreReader::new(self.delimiter, self.quote),
             field_count: None,
+            flexible: false,
         }
     }
 }
@@ -67,6 +75,7 @@ pub struct Reader<R> {
     buffer: BufReader<R>,
     inner: CoreReader,
     field_count: Option<usize>,
+    flexible: bool,
 }
 
 impl<R: Read> Reader<R> {
@@ -76,6 +85,10 @@ impl<R: Read> Reader<R> {
 
     #[inline]
     fn check_field_count(&mut self, written: usize) -> error::Result<()> {
+        if self.flexible {
+            return Ok(());
+        }
+
         match self.field_count {
             Some(expected) => {
                 if written != expected {
