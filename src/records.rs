@@ -216,6 +216,15 @@ impl Index<usize> for ByteRecord {
     }
 }
 
+impl<T: AsRef<[u8]>> Extend<T> for ByteRecord {
+    #[inline]
+    fn extend<I: IntoIterator<Item = T>>(&mut self, iter: I) {
+        for x in iter {
+            self.push_field(x.as_ref());
+        }
+    }
+}
+
 impl<I, T> From<I> for ByteRecord
 where
     I: IntoIterator<Item = T>,
