@@ -326,4 +326,16 @@ mod tests {
 
         Ok(())
     }
+
+    // #[test]
+    // fn test_weirdness() -> error::Result<()> {
+    //     let data = b"name,surname\n\"test\"  \"wat\", ok\ntest \"wat\",ok  \ntest,\"ok\"\r\n";
+    //     let mut reader = Reader::from_reader(Cursor::new(data));
+
+    //     let records = reader.byte_records().collect::<Vec<_>>();
+
+    //     dbg!(&records);
+
+    //     Ok(())
+    // }
 }
