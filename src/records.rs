@@ -304,6 +304,7 @@ impl<'a> Iterator for ByteRecordIter<'a> {
 }
 
 impl<'a> DoubleEndedIterator for ByteRecordIter<'a> {
+    #[inline]
     fn next_back(&mut self) -> Option<Self::Item> {
         if self.current_forward == self.current_reverse {
             None
