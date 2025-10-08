@@ -241,6 +241,16 @@ where
     }
 }
 
+impl<'r> IntoIterator for &'r ByteRecord {
+    type IntoIter = ByteRecordIter<'r>;
+    type Item = &'r [u8];
+
+    #[inline]
+    fn into_iter(self) -> ByteRecordIter<'r> {
+        self.iter()
+    }
+}
+
 impl fmt::Debug for ByteRecord {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(f, "ByteRecord(")?;
