@@ -237,6 +237,15 @@ impl<T: AsRef<[u8]>> Extend<T> for ByteRecord {
     }
 }
 
+impl<T: AsRef<[u8]>> FromIterator<T> for ByteRecord {
+    #[inline]
+    fn from_iter<I: IntoIterator<Item = T>>(iter: I) -> Self {
+        let mut record = Self::new();
+        record.extend(iter);
+        record
+    }
+}
+
 impl<I, T> From<I> for ByteRecord
 where
     I: IntoIterator<Item = T>,
