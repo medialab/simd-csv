@@ -167,7 +167,8 @@ impl ByteRecord {
     pub fn iter(&self) -> ByteRecordIter<'_> {
         ByteRecordIter {
             record: self,
-            current: 0,
+            current_forward: 0,
+            current_reverse: self.len(),
         }
     }
 
@@ -264,7 +265,8 @@ impl fmt::Debug for ByteRecord {
 
 pub struct ByteRecordIter<'a> {
     record: &'a ByteRecord,
-    current: usize,
+    current_forward: usize,
+    current_reverse: usize,
 }
 
 impl<'a> ExactSizeIterator for ByteRecordIter<'a> {}
@@ -274,12 +276,12 @@ impl<'a> Iterator for ByteRecordIter<'a> {
 
     #[inline]
     fn next(&mut self) -> Option<Self::Item> {
-        if self.current >= self.record.bounds.len() {
+        if self.current_forward == self.current_reverse {
             None
         } else {
-            let (start, end) = self.record.bounds[self.current];
+            let (start, end) = self.record.bounds[self.current_forward];
 
-            self.current += 1;
+            self.current_forward += 1;
 
             Some(&self.record.data[start..end])
         }
@@ -287,7 +289,7 @@ impl<'a> Iterator for ByteRecordIter<'a> {
 
     #[inline]
     fn size_hint(&self) -> (usize, Option<usize>) {
-        let size = self.record.len() - self.current;
+        let size = self.current_reverse - self.current_forward;
 
         (size, Some(size))
     }
@@ -298,6 +300,20 @@ impl<'a> Iterator for ByteRecordIter<'a> {
         Self: Sized,
     {
         self.len()
+    }
+}
+
+impl<'a> DoubleEndedIterator for ByteRecordIter<'a> {
+    fn next_back(&mut self) -> Option<Self::Item> {
+        if self.current_forward == self.current_reverse {
+            None
+        } else {
+            self.current_reverse -= 1;
+
+            let (start, end) = self.record.bounds[self.current_reverse];
+
+            Some(&self.record.data[start..end])
+        }
     }
 }
 
