@@ -159,6 +159,17 @@ impl ByteRecord {
     }
 
     #[inline]
+    pub fn truncate(&mut self, len: usize) {
+        self.bounds.truncate(len);
+
+        if let Some((_, end)) = self.bounds.last() {
+            self.data.truncate(*end);
+        } else {
+            self.data.clear();
+        }
+    }
+
+    #[inline]
     pub fn as_slice(&self) -> &[u8] {
         &self.data
     }
