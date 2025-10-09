@@ -115,7 +115,7 @@ impl<R: Read> ZeroCopyReader<R> {
 
             let (result, pos) =
                 self.inner
-                    .split_record_and_find_separators(input, seps_offset, &mut self.seps);
+                    .split_record_and_find_separators_alt(input, seps_offset, &mut self.seps);
 
             match result {
                 End => {
@@ -164,7 +164,7 @@ mod tests {
             vec!["jermaine", "jackson", "\"89\""],
             vec!["karine", "loucan", "\"52\""],
             vec!["rose", "\"glib\"", "12"],
-            vec!["\"guillaume\"", "\"plique\"", "\"42\""],
+            vec!["\"guillaume\"", "\"plique\"", "\"42\"\r"],
         ]
         .into_iter()
         .map(|record| {

@@ -15,9 +15,9 @@ pub enum ReadResult {
 
 #[derive(Debug, Clone, Copy)]
 enum ReadState {
-    Unquoted,
-    Quoted,
-    Quote,
+    Quoted = 0,
+    Unquoted = 1,
+    Quote = 2,
 }
 
 // NOTE: funnily enough, knowing the delimiter is not required to split the records,
@@ -257,15 +257,26 @@ impl CoreReader {
         for offset in self.searcher.search(input) {
             let byte = input[offset];
 
+            let must_return = (byte == b'\n') as u8 * self.state as u8;
+
+            if must_return != 0 {
+                self.record_was_read = true;
+                self.state = Unquoted;
+                return (ReadResult::Record, offset);
+            }
+
+            let must_push = (byte == self.delimiter) as u8 * self.state as u8;
+
+            if must_push != 0 {
+                seps.push(seps_offset + offset);
+                self.state = Unquoted;
+                continue;
+            }
+
             match self.state {
                 Unquoted => {
-                    if byte == self.delimiter {
-                        seps.push(seps_offset + offset);
-                    } else if byte == self.quote {
+                    if byte == self.quote {
                         self.state = Quoted;
-                    } else {
-                        self.record_was_read = true;
-                        return (ReadResult::Record, offset);
                     }
                 }
                 Quoted => {
@@ -276,13 +287,8 @@ impl CoreReader {
                 Quote => {
                     if byte == self.quote {
                         self.state = Quoted;
-                    } else if byte == self.delimiter {
-                        seps.push(seps_offset + offset);
-                        self.state = Unquoted;
                     } else {
-                        self.record_was_read = true;
                         self.state = Unquoted;
-                        return (ReadResult::Record, offset);
                     }
                 }
             }
