@@ -3,7 +3,7 @@ use std::fmt;
 use std::ops::Index;
 
 use crate::debug;
-use crate::utils::{is_quoted, trim_trailing_crlf, unescape, unescape_to};
+use crate::utils::{trim_trailing_crlf, unescape, unescape_to, unquoted};
 
 pub struct ZeroCopyByteRecord<'a> {
     slice: &'a [u8],
@@ -71,20 +71,15 @@ impl<'a> ZeroCopyByteRecord<'a> {
 
     #[inline]
     pub fn unquote(&self, index: usize) -> Option<&[u8]> {
-        self.get(index).map(|cell| {
-            if is_quoted(cell, self.quote) {
-                &cell[1..cell.len() - 1]
-            } else {
-                cell
-            }
-        })
+        self.get(index)
+            .map(|cell| unquoted(cell, self.quote).unwrap_or(cell))
     }
 
     #[inline]
     pub fn unescape(&self, index: usize) -> Option<Cow<[u8]>> {
         self.unquote(index).map(|cell| {
-            if is_quoted(cell, self.quote) {
-                unescape(&cell[1..cell.len() - 1], self.quote)
+            if let Some(trimmed) = unquoted(cell, self.quote) {
+                unescape(trimmed, self.quote)
             } else {
                 Cow::Borrowed(cell)
             }
@@ -95,8 +90,8 @@ impl<'a> ZeroCopyByteRecord<'a> {
         record.clear();
 
         for cell in self.iter() {
-            if is_quoted(cell, self.quote) {
-                unescape_to(&cell[1..cell.len() - 1], self.quote, &mut record.data);
+            if let Some(trimmed) = unquoted(cell, self.quote) {
+                unescape_to(trimmed, self.quote, &mut record.data);
 
                 let bounds_len = record.bounds.len();
 

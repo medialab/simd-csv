@@ -14,9 +14,14 @@ pub fn trim_trailing_crlf(slice: &[u8]) -> &[u8] {
     &slice[..len]
 }
 
-pub fn is_quoted(cell: &[u8], quote: u8) -> bool {
+pub fn unquoted(cell: &[u8], quote: u8) -> Option<&[u8]> {
     let len = cell.len();
-    len >= 2 && cell[0] == quote && cell[len - 1] == quote
+
+    if len >= 2 && cell[0] == quote && cell[len - 1] == quote {
+        Some(&cell[1..len - 1])
+    } else {
+        None
+    }
 }
 
 pub fn unescape(cell: &[u8], quote: u8) -> Cow<[u8]> {
