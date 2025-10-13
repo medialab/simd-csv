@@ -2,28 +2,16 @@ use std::borrow::Cow;
 
 use memchr::memchr;
 
+#[inline]
 pub fn trim_trailing_crlf(slice: &[u8]) -> &[u8] {
-    let len = slice.len();
+    let mut len = slice.len();
 
-    match len {
-        0 => slice,
-        1 => {
-            if slice[0] == b'\n' {
-                b""
-            } else {
-                slice
-            }
-        }
-        _ => {
-            if &slice[len - 2..] == b"\r\n" {
-                &slice[..len - 2]
-            } else if slice[len - 1] == b'\n' {
-                &slice[..len - 1]
-            } else {
-                slice
-            }
-        }
-    }
+    let has_lf = len >= 1 && slice[len - 1] == b'\n';
+    let has_crlf = has_lf && len >= 2 && slice[len - 2] == b'\r';
+
+    len -= (has_lf as usize) + (has_crlf as usize);
+
+    &slice[..len]
 }
 
 pub fn unescape(cell: &[u8], quote: u8) -> Cow<[u8]> {
