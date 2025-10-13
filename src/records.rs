@@ -368,6 +368,17 @@ impl<'r> ByteRecordBuilder<'r> {
     }
 
     #[inline]
+    pub(crate) fn finalize_record(&mut self) {
+        let start = self.start;
+        self.start = self.record.data.len();
+
+        let mut end = self.start;
+        end -= (self.start > 0 && self.record.data[self.start - 1] == b'\r') as usize;
+
+        self.record.bounds.push((start, end));
+    }
+
+    #[inline]
     pub(crate) fn finalize_field_preemptively(&mut self, offset: usize) {
         let start = self.start;
         self.start = self.record.data.len() + offset;
@@ -379,7 +390,8 @@ impl<'r> ByteRecordBuilder<'r> {
 
     #[inline(always)]
     pub(crate) fn bump(&mut self) {
-        self.start += 1;
+        self.start +=
+            (self.record.bounds.last().map(|(s, _)| *s).unwrap_or(0) != self.start) as usize;
     }
 }
 

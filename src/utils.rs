@@ -2,17 +2,6 @@ use std::borrow::Cow;
 
 use memchr::memchr;
 
-#[inline]
-pub fn trim_trailing_cr(line: &[u8]) -> &[u8] {
-    let len = line.len();
-
-    if !line.is_empty() && line[len - 1] == b'\r' {
-        &line[..len - 1]
-    } else {
-        line
-    }
-}
-
 pub fn trim_trailing_crlf(slice: &[u8]) -> &[u8] {
     let len = slice.len();
 

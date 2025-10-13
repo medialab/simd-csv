@@ -2,7 +2,6 @@ use memchr::{memchr, memchr2};
 
 use crate::records::ByteRecordBuilder;
 use crate::searcher::Searcher;
-use crate::utils::trim_trailing_cr;
 
 #[derive(Debug, Clone, Copy)]
 pub enum ReadResult {
@@ -133,7 +132,9 @@ impl CoreReader {
     ) -> (ReadResult, usize) {
         use ReadState::*;
 
-        if input.is_empty() {
+        let input_len = input.len();
+
+        if input_len == 0 {
             if !self.record_was_read {
                 self.record_was_read = true;
                 return (ReadResult::Record, 0);
@@ -154,7 +155,7 @@ impl CoreReader {
 
         let mut pos: usize = 0;
 
-        while pos < input.len() {
+        while pos < input_len {
             match self.state {
                 Unquoted => {
                     // Fast path for quoted field start
@@ -223,7 +224,7 @@ impl CoreReader {
             }
         }
 
-        (ReadResult::InputEmpty, input.len())
+        (ReadResult::InputEmpty, input_len)
     }
 
     #[allow(dead_code)]
@@ -298,12 +299,14 @@ impl CoreReader {
     ) -> (ReadResult, usize) {
         use ReadState::*;
 
-        if input.is_empty() {
+        let input_len = input.len();
+
+        if input_len == 0 {
             if !self.record_was_read {
                 self.record_was_read = true;
 
                 // NOTE: this is required to handle streams not ending with a newline
-                record_builder.finalize_field();
+                record_builder.finalize_record();
                 return (ReadResult::Record, 0);
             }
 
@@ -322,7 +325,7 @@ impl CoreReader {
 
         let mut pos: usize = 0;
 
-        while pos < input.len() {
+        while pos < input_len {
             match self.state {
                 Unquoted => {
                     // Fast path for quoted field start
@@ -348,9 +351,8 @@ impl CoreReader {
                         }
 
                         if byte == b'\n' {
-                            record_builder
-                                .extend_from_slice(trim_trailing_cr(&input[pos..pos + offset]));
-                            record_builder.finalize_field();
+                            record_builder.extend_from_slice(&input[pos..pos + offset]);
+                            record_builder.finalize_record();
                             self.record_was_read = true;
                             return (ReadResult::Record, pos + last_offset);
                         }
@@ -381,19 +383,19 @@ impl CoreReader {
                 Quote => {
                     let byte = input[pos];
 
-                    pos += 1;
-
                     if byte == self.quote {
                         self.state = Quoted;
                         record_builder.push_byte(byte);
+                        pos += 1;
                     } else if byte == self.delimiter {
                         record_builder.finalize_field();
+                        pos += 1;
                         self.state = Unquoted;
                     } else if byte == b'\n' {
                         self.record_was_read = true;
                         self.state = Unquoted;
-                        record_builder.finalize_field();
-                        return (ReadResult::Record, pos);
+                        record_builder.finalize_record();
+                        return (ReadResult::Record, pos + 1);
                     } else {
                         self.state = Unquoted;
                     }
@@ -403,100 +405,6 @@ impl CoreReader {
 
         record_builder.extend_from_slice(&input[pos..]);
 
-        (ReadResult::InputEmpty, input.len())
+        (ReadResult::InputEmpty, input_len)
     }
-
-    // NOTE: this version of the method wraps the state machine logic within the
-    // SIMD iteration logic. Ironically it seems slower than the multiple-speed
-    // stop-and-go implementation above.
-    // Be advised that this code does not handle final \r correctly yet.
-    // fn read_record(&mut self, input: &[u8], record: &mut ByteRecord) -> (ReadResult, usize) {
-    //     use ReadState::*;
-
-    //     if input.is_empty() {
-    //         if !self.record_was_read {
-    //             self.record_was_read = true;
-    //             record.finalize_field();
-    //             return (ReadResult::Record, 0);
-    //         }
-
-    //         return (ReadResult::End, 0);
-    //     }
-
-    //     if self.record_was_read {
-    //         if input[0] == b'\n' {
-    //             return (ReadResult::Lf, 1);
-    //         } else if input[0] == b'\r' {
-    //             return (ReadResult::Cr, 1);
-    //         }
-    //     }
-
-    //     self.record_was_read = false;
-
-    //     let mut last_offset: Option<usize> = None;
-    //     let mut start: usize;
-
-    //     for offset in self.searcher.search(input) {
-    //         let byte = input[offset];
-
-    //         if let Quote = self.state {
-    //             if byte == self.quote {
-    //                 let was_previously_a_quote = match last_offset {
-    //                     None => true,
-    //                     Some(o) => o == offset - 1,
-    //                 };
-
-    //                 if was_previously_a_quote {
-    //                     self.state = Quoted;
-    //                     continue;
-    //                 } else {
-    //                     self.state = Unquoted;
-    //                 }
-    //             } else {
-    //                 self.state = Unquoted;
-    //             }
-    //         }
-
-    //         start = last_offset.map(|o| o + 1).unwrap_or(0);
-    //         last_offset = Some(offset);
-
-    //         match self.state {
-    //             Unquoted => {
-    //                 record.extend_from_slice(&input[start..offset]);
-
-    //                 last_offset = Some(offset);
-
-    //                 if byte == self.delimiter {
-    //                     record.finalize_field();
-    //                     continue;
-    //                 }
-
-    //                 if byte == b'\n' {
-    //                     record.finalize_field();
-    //                     self.record_was_read = true;
-    //                     return (ReadResult::Record, offset + 1);
-    //                 }
-
-    //                 // Here, `byte` is guaranteed to be a quote
-    //                 self.state = Quoted;
-    //             }
-    //             Quoted => {
-    //                 record.extend_from_slice(&input[start..offset]);
-
-    //                 if byte != self.quote {
-    //                     record.push_byte(byte);
-    //                     continue;
-    //                 }
-
-    //                 self.state = Quote;
-    //             }
-    //             _ => unreachable!(),
-    //         }
-    //     }
-
-    //     start = last_offset.map(|o| o + 1).unwrap_or(0);
-    //     record.extend_from_slice(&input[start..]);
-
-    //     (ReadResult::InputEmpty, input.len())
-    // }
 }

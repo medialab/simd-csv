@@ -244,7 +244,7 @@ mod tests {
 
             assert_eq!(
                 reader.byte_records().collect::<Result<Vec<_>, _>>()?,
-                expected
+                expected,
             );
         }
 
@@ -327,15 +327,31 @@ mod tests {
         Ok(())
     }
 
-    // #[test]
-    // fn test_weirdness() -> error::Result<()> {
-    //     let data = b"name,surname\n\"test\"  \"wat\", ok\ntest \"wat\",ok  \ntest,\"ok\"\r\n";
-    //     let mut reader = Reader::from_reader(Cursor::new(data));
+    #[test]
+    fn test_weirdness() -> error::Result<()> {
+        // Data after quotes, before next delimiter
+        let data =
+            b"name,surname\n\"test\"  \"wat\", ok\ntest \"wat\",ok  \ntest,\"whatever\"  ok\n\"test\"   there,\"ok\"\r\n";
+        let mut reader = Reader::from_reader(Cursor::new(data));
 
-    //     let records = reader.byte_records().collect::<Vec<_>>();
+        let records = reader.byte_records().collect::<Result<Vec<_>, _>>()?;
 
-    //     dbg!(&records);
+        let expected = vec![
+            brec!["name", "surname"],
+            brec!["test  \"wat", " ok"],
+            brec!["test \"wat", "ok  "],
+            brec!["test", "whatever  ok"],
+            brec!["test   there", "ok"],
+        ];
 
-    //     Ok(())
-    // }
+        assert_eq!(records, expected);
+
+        // let data = "aaa\"aaa,bbb";
+        // let mut reader = Reader::from_reader(Cursor::new(data));
+        // let record = reader.byte_records().next().unwrap().unwrap();
+
+        // assert_eq!(record, brec!["aaa\"aaa", "bbb"]);
+
+        Ok(())
+    }
 }
