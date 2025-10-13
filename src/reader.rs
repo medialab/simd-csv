@@ -119,7 +119,7 @@ impl<R: Read> Reader<R> {
         let (result, pos) = self.inner.read_record(input, &mut record_builder);
 
         match result {
-            End => Ok(ByteRecord::new()),
+            End => Ok(record),
 
             // TODO: we could expand the capacity of the buffer automagically here
             // if this becomes an issue.

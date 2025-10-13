@@ -103,6 +103,44 @@ impl<R: Read> ZeroCopyReader<R> {
         Ok(())
     }
 
+    pub fn peek_byte_record(&mut self, consume: bool) -> error::Result<ZeroCopyByteRecord<'_>> {
+        use ReadResult::*;
+
+        self.buffer.reset();
+        self.seps.clear();
+
+        let seps_offset = self.buffer.saved().len();
+        let input = self.buffer.fill_buf()?;
+
+        let (result, pos) =
+            self.inner
+                .split_record_and_find_separators(input, seps_offset, &mut self.seps);
+
+        match result {
+            End => Ok(ZeroCopyByteRecord::new(
+                b"",
+                &self.seps,
+                self.inner.delimiter,
+                self.inner.quote,
+            )),
+            Cr | Lf | InputEmpty => Err(Error::invalid_headers()),
+            Record => {
+                if consume {
+                    self.buffer.consume(pos);
+                }
+
+                let record = ZeroCopyByteRecord::new(
+                    &self.buffer.buffer()[pos..],
+                    &self.seps,
+                    self.inner.delimiter,
+                    self.inner.quote,
+                );
+
+                return Ok(record);
+            }
+        }
+    }
+
     pub fn read_byte_record(&mut self) -> error::Result<Option<ZeroCopyByteRecord<'_>>> {
         use ReadResult::*;
 

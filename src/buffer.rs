@@ -33,6 +33,11 @@ impl<R: Read> ScratchBuffer<R> {
     }
 
     #[inline(always)]
+    pub fn buffer(&self) -> &[u8] {
+        self.inner.buffer()
+    }
+
+    #[inline(always)]
     pub fn consume(&mut self, amt: usize) {
         self.inner.consume(amt);
     }
