@@ -9,17 +9,15 @@ pub struct ZeroCopyByteRecord<'a> {
     slice: &'a [u8],
     seps: &'a [usize],
     quote: u8,
-    _delimiter: u8,
 }
 
 impl<'a> ZeroCopyByteRecord<'a> {
     #[inline]
-    pub(crate) fn new(slice: &'a [u8], seps: &'a [usize], delimiter: u8, quote: u8) -> Self {
+    pub(crate) fn new(slice: &'a [u8], seps: &'a [usize], quote: u8) -> Self {
         Self {
             slice: trim_trailing_crlf(slice),
             seps,
             quote,
-            _delimiter: delimiter,
         }
     }
 
@@ -41,8 +39,8 @@ impl<'a> ZeroCopyByteRecord<'a> {
     }
 
     #[inline]
-    pub fn iter(&self) -> ZeroCopyRecordIter<'_> {
-        ZeroCopyRecordIter {
+    pub fn iter(&self) -> ZeroCopyByteRecordIter<'_> {
+        ZeroCopyByteRecordIter {
             record: self,
             current: 0,
         }
@@ -72,17 +70,11 @@ impl<'a> ZeroCopyByteRecord<'a> {
     }
 
     #[inline]
-    pub fn is_quoted(&self, index: usize) -> bool {
-        let cell = self.get(index).unwrap();
-        cell.len() > 1 && cell[0] == self.quote
-    }
-
-    #[inline]
     pub fn unquote(&self, index: usize) -> Option<&[u8]> {
         self.get(index).map(|cell| {
             let len = cell.len();
 
-            if len > 1 && cell[0] == self.quote {
+            if len > 1 && cell[0] == self.quote && cell[len - 1] == self.quote {
                 &cell[1..len - 1]
             } else {
                 cell
@@ -107,22 +99,40 @@ impl<'a> fmt::Debug for ZeroCopyByteRecord<'a> {
     }
 }
 
-pub struct ZeroCopyRecordIter<'a> {
+pub struct ZeroCopyByteRecordIter<'a> {
     record: &'a ZeroCopyByteRecord<'a>,
     current: usize,
 }
 
-impl<'a> Iterator for ZeroCopyRecordIter<'a> {
+impl<'a> ExactSizeIterator for ZeroCopyByteRecordIter<'a> {}
+
+impl<'a> Iterator for ZeroCopyByteRecordIter<'a> {
     type Item = &'a [u8];
 
+    #[inline]
     fn next(&mut self) -> Option<Self::Item> {
-        let cell = self.record.get(self.current);
-
-        if cell.is_some() {
-            self.current += 1;
+        match self.record.get(self.current) {
+            None => None,
+            Some(cell) => {
+                self.current += 1;
+                Some(cell)
+            }
         }
+    }
 
-        cell
+    #[inline]
+    fn size_hint(&self) -> (usize, Option<usize>) {
+        let size = self.record.len() - self.current;
+
+        (size, Some(size))
+    }
+
+    #[inline]
+    fn count(self) -> usize
+    where
+        Self: Sized,
+    {
+        self.len()
     }
 }
 
@@ -422,7 +432,7 @@ mod tests {
 
     #[test]
     fn test_zero_copy_byte_record() {
-        let record = ZeroCopyByteRecord::new(b"name,surname,age", &[4, 12], b',', b'"');
+        let record = ZeroCopyByteRecord::new(b"name,surname,age", &[4, 12], b'"');
 
         assert_eq!(record.len(), 3);
 

@@ -117,12 +117,7 @@ impl<R: Read> ZeroCopyReader<R> {
                 .split_record_and_find_separators(input, seps_offset, &mut self.seps);
 
         match result {
-            End => Ok(ZeroCopyByteRecord::new(
-                b"",
-                &self.seps,
-                self.inner.delimiter,
-                self.inner.quote,
-            )),
+            End => Ok(ZeroCopyByteRecord::new(b"", &self.seps, self.inner.quote)),
             Cr | Lf | InputEmpty => Err(Error::invalid_headers()),
             Record => {
                 if consume {
@@ -132,11 +127,10 @@ impl<R: Read> ZeroCopyReader<R> {
                 let record = ZeroCopyByteRecord::new(
                     &self.buffer.buffer()[pos..],
                     &self.seps,
-                    self.inner.delimiter,
                     self.inner.quote,
                 );
 
-                return Ok(record);
+                Ok(record)
             }
         }
     }
@@ -172,7 +166,6 @@ impl<R: Read> ZeroCopyReader<R> {
                     let record = ZeroCopyByteRecord::new(
                         self.buffer.flush(pos),
                         &self.seps,
-                        self.inner.delimiter,
                         self.inner.quote,
                     );
 
