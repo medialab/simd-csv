@@ -44,7 +44,9 @@ impl CoreReader {
     pub(crate) fn split_record(&mut self, input: &[u8]) -> (ReadResult, usize) {
         use ReadState::*;
 
-        if input.is_empty() {
+        let input_len = input.len();
+
+        if input_len == 0 {
             if !self.record_was_read {
                 self.record_was_read = true;
                 return (ReadResult::Record, 0);
@@ -65,7 +67,7 @@ impl CoreReader {
 
         let mut pos: usize = 0;
 
-        while pos < input.len() {
+        while pos < input_len {
             match self.state {
                 Unquoted => {
                     // Fast path for quoted field start
@@ -121,7 +123,7 @@ impl CoreReader {
             }
         }
 
-        (ReadResult::InputEmpty, input.len())
+        (ReadResult::InputEmpty, input_len)
     }
 
     pub(crate) fn split_record_and_find_separators(
