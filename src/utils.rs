@@ -14,6 +14,11 @@ pub fn trim_trailing_crlf(slice: &[u8]) -> &[u8] {
     &slice[..len]
 }
 
+pub fn is_quoted(cell: &[u8], quote: u8) -> bool {
+    let len = cell.len();
+    len >= 2 && cell[0] == quote && cell[len - 1] == quote
+}
+
 pub fn unescape(cell: &[u8], quote: u8) -> Cow<[u8]> {
     let len = cell.len();
     let mut output = Vec::new();
@@ -43,6 +48,24 @@ pub fn unescape(cell: &[u8], quote: u8) -> Cow<[u8]> {
     }
 }
 
+pub fn unescape_to(cell: &[u8], quote: u8, out: &mut Vec<u8>) {
+    let len = cell.len();
+    let mut pos: usize = 0;
+
+    while pos < len {
+        if let Some(offset) = memchr(quote, &cell[pos..]) {
+            out.extend_from_slice(&cell[pos..pos + offset + 1]);
+
+            // NOTE: we assume, next character MUST be a quote
+            pos += offset + 2;
+        } else {
+            break;
+        }
+    }
+
+    out.extend_from_slice(&cell[pos..]);
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -58,5 +81,21 @@ mod tests {
             unescape(b"this is \"\"hello\"\" then?", b'"'),
             Cow::<[u8]>::Owned(b"this is \"hello\" then?".to_vec())
         );
+    }
+
+    #[test]
+    fn test_unescape_to() {
+        let mut scratch = Vec::new();
+
+        unescape_to(b"test", b'"', &mut scratch);
+        assert_eq!(scratch, b"test");
+
+        scratch.clear();
+        unescape_to(b"\"\"hello\"\"", b'"', &mut scratch);
+        assert_eq!(scratch, b"\"hello\"");
+
+        scratch.clear();
+        unescape_to(b"this is \"\"hello\"\" then?", b'"', &mut scratch);
+        assert_eq!(scratch, b"this is \"hello\" then?");
     }
 }

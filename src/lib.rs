@@ -20,6 +20,5 @@ pub use records::{ByteRecord, ZeroCopyByteRecord};
 pub use searcher::Searcher;
 pub use splitter::{Splitter, SplitterBuilder};
 pub use total_reader::{TotalReader, TotalReaderBuilder};
-pub use utils::unescape;
 pub use writer::{Writer, WriterBuilder};
 pub use zero_copy_reader::{ZeroCopyReader, ZeroCopyReaderBuilder};

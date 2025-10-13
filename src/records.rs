@@ -3,7 +3,7 @@ use std::fmt;
 use std::ops::Index;
 
 use crate::debug;
-use crate::utils::{trim_trailing_crlf, unescape};
+use crate::utils::{is_quoted, trim_trailing_crlf, unescape, unescape_to};
 
 pub struct ZeroCopyByteRecord<'a> {
     slice: &'a [u8],
@@ -72,10 +72,8 @@ impl<'a> ZeroCopyByteRecord<'a> {
     #[inline]
     pub fn unquote(&self, index: usize) -> Option<&[u8]> {
         self.get(index).map(|cell| {
-            let len = cell.len();
-
-            if len > 1 && cell[0] == self.quote && cell[len - 1] == self.quote {
-                &cell[1..len - 1]
+            if is_quoted(cell, self.quote) {
+                &cell[1..cell.len() - 1]
             } else {
                 cell
             }
@@ -84,7 +82,42 @@ impl<'a> ZeroCopyByteRecord<'a> {
 
     #[inline]
     pub fn unescape(&self, index: usize) -> Option<Cow<[u8]>> {
-        self.unquote(index).map(|cell| unescape(cell, self.quote))
+        self.unquote(index).map(|cell| {
+            if is_quoted(cell, self.quote) {
+                unescape(&cell[1..cell.len() - 1], self.quote)
+            } else {
+                Cow::Borrowed(cell)
+            }
+        })
+    }
+
+    fn read_byte_record(&self, record: &mut ByteRecord) {
+        record.clear();
+
+        for cell in self.iter() {
+            if is_quoted(cell, self.quote) {
+                unescape_to(&cell[1..cell.len() - 1], self.quote, &mut record.data);
+
+                let bounds_len = record.bounds.len();
+
+                let start = if bounds_len == 0 {
+                    0
+                } else {
+                    record.bounds[bounds_len - 1].1
+                };
+
+                record.bounds.push((start, record.data.len()));
+            } else {
+                record.push_field(cell);
+            }
+        }
+    }
+
+    #[inline]
+    pub fn to_byte_record(&self) -> ByteRecord {
+        let mut record = ByteRecord::new();
+        self.read_byte_record(&mut record);
+        record
     }
 }
 
