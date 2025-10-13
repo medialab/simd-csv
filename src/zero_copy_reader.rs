@@ -131,7 +131,12 @@ impl<R: Read> ZeroCopyReader<R> {
                 Record => {
                     self.check_field_count(self.seps.len() + 1)?;
 
-                    let record = ZeroCopyByteRecord::new(self.buffer.flush(pos), &self.seps);
+                    let record = ZeroCopyByteRecord::new(
+                        self.buffer.flush(pos),
+                        &self.seps,
+                        self.inner.delimiter,
+                        self.inner.quote,
+                    );
 
                     return Ok(Some(record));
                 }

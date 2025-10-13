@@ -8,14 +8,18 @@ use crate::utils::{trim_trailing_crlf, unescape};
 pub struct ZeroCopyByteRecord<'a> {
     slice: &'a [u8],
     seps: &'a [usize],
+    quote: u8,
+    _delimiter: u8,
 }
 
 impl<'a> ZeroCopyByteRecord<'a> {
     #[inline]
-    pub(crate) fn new(slice: &'a [u8], seps: &'a [usize]) -> Self {
+    pub(crate) fn new(slice: &'a [u8], seps: &'a [usize], delimiter: u8, quote: u8) -> Self {
         Self {
             slice: trim_trailing_crlf(slice),
             seps,
+            quote,
+            _delimiter: delimiter,
         }
     }
 
@@ -68,17 +72,17 @@ impl<'a> ZeroCopyByteRecord<'a> {
     }
 
     #[inline]
-    pub fn is_quoted(&self, index: usize, quote: u8) -> bool {
+    pub fn is_quoted(&self, index: usize) -> bool {
         let cell = self.get(index).unwrap();
-        cell.len() > 1 && cell[0] == quote
+        cell.len() > 1 && cell[0] == self.quote
     }
 
     #[inline]
-    pub fn unquote(&self, index: usize, quote: u8) -> Option<&[u8]> {
+    pub fn unquote(&self, index: usize) -> Option<&[u8]> {
         self.get(index).map(|cell| {
             let len = cell.len();
 
-            if len > 1 && cell[0] == quote {
+            if len > 1 && cell[0] == self.quote {
                 &cell[1..len - 1]
             } else {
                 cell
@@ -87,8 +91,8 @@ impl<'a> ZeroCopyByteRecord<'a> {
     }
 
     #[inline]
-    pub fn unescape(&self, index: usize, quote: u8) -> Option<Cow<[u8]>> {
-        self.unquote(index, quote).map(|cell| unescape(cell, quote))
+    pub fn unescape(&self, index: usize) -> Option<Cow<[u8]>> {
+        self.unquote(index).map(|cell| unescape(cell, self.quote))
     }
 }
 
@@ -418,7 +422,7 @@ mod tests {
 
     #[test]
     fn test_zero_copy_byte_record() {
-        let record = ZeroCopyByteRecord::new(b"name,surname,age", &[4, 12]);
+        let record = ZeroCopyByteRecord::new(b"name,surname,age", &[4, 12], b',', b'"');
 
         assert_eq!(record.len(), 3);
 
