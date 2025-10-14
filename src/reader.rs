@@ -2,14 +2,15 @@ use std::io::{BufRead, BufReader, Read};
 
 use crate::core::{CoreReader, ReadResult};
 use crate::error::{self, Error};
-use crate::ext::StripBom;
 use crate::records::{ByteRecord, ByteRecordBuilder};
+use crate::utils::trim_bom;
 
 pub struct ReaderBuilder {
     delimiter: u8,
     quote: u8,
     buffer_capacity: Option<usize>,
     flexible: bool,
+    has_headers: bool,
 }
 
 impl Default for ReaderBuilder {
@@ -19,6 +20,7 @@ impl Default for ReaderBuilder {
             quote: b'"',
             buffer_capacity: None,
             flexible: false,
+            has_headers: false,
         }
     }
 }
@@ -54,6 +56,11 @@ impl ReaderBuilder {
         self
     }
 
+    pub fn has_headers(&mut self, yes: bool) -> &mut Self {
+        self.has_headers = yes;
+        self
+    }
+
     fn bufreader<R: Read>(&self, reader: R) -> BufReader<R> {
         match self.buffer_capacity {
             None => BufReader::new(reader),
@@ -65,8 +72,10 @@ impl ReaderBuilder {
         Reader {
             buffer: self.bufreader(reader),
             inner: CoreReader::new(self.delimiter, self.quote),
-            field_count: None,
-            flexible: false,
+            flexible: self.flexible,
+            headers: ByteRecord::new(),
+            has_read: false,
+            must_reemit_headers: !self.has_headers,
         }
     }
 }
@@ -74,8 +83,10 @@ impl ReaderBuilder {
 pub struct Reader<R> {
     buffer: BufReader<R>,
     inner: CoreReader,
-    field_count: Option<usize>,
     flexible: bool,
+    headers: ByteRecord,
+    has_read: bool,
+    must_reemit_headers: bool,
 }
 
 impl<R: Read> Reader<R> {
@@ -89,52 +100,14 @@ impl<R: Read> Reader<R> {
             return Ok(());
         }
 
-        match self.field_count {
-            Some(expected) => {
-                if written != expected {
-                    return Err(Error::unequal_lengths(expected, written));
-                }
-            }
-            None => {
-                self.field_count = Some(written);
-            }
+        if self.has_read && written != self.headers.len() {
+            return Err(Error::unequal_lengths(self.headers.len(), written));
         }
 
         Ok(())
     }
 
-    pub fn strip_bom(&mut self) -> error::Result<()> {
-        self.buffer.strip_bom()?;
-        Ok(())
-    }
-
-    pub fn peek_byte_record(&mut self, consume: bool) -> error::Result<ByteRecord> {
-        use ReadResult::*;
-
-        let mut record = ByteRecord::new();
-        let mut record_builder = ByteRecordBuilder::wrap(&mut record);
-
-        let input = self.buffer.fill_buf()?;
-
-        let (result, pos) = self.inner.read_record(input, &mut record_builder);
-
-        match result {
-            End => Ok(record),
-
-            // TODO: we could expand the capacity of the buffer automagically here
-            // if this becomes an issue.
-            Cr | Lf | ReadResult::InputEmpty => Err(Error::invalid_headers()),
-            Record => {
-                if consume {
-                    self.buffer.consume(pos);
-                }
-
-                Ok(record)
-            }
-        }
-    }
-
-    pub fn read_byte_record(&mut self, record: &mut ByteRecord) -> error::Result<bool> {
+    pub fn read_byte_record_impl(&mut self, record: &mut ByteRecord) -> error::Result<bool> {
         use ReadResult::*;
 
         record.clear();
@@ -161,6 +134,42 @@ impl<R: Read> Reader<R> {
                 }
             };
         }
+    }
+
+    #[inline]
+    pub fn byte_headers(&mut self) -> error::Result<&ByteRecord> {
+        if !self.has_read {
+            // Trimming BOM
+            let input = self.buffer.fill_buf()?;
+            let bom_len = trim_bom(input);
+            self.buffer.consume(bom_len);
+
+            let mut headers = ByteRecord::new();
+
+            let has_data = self.read_byte_record_impl(&mut headers)?;
+
+            if !has_data {
+                self.must_reemit_headers = false;
+            }
+
+            self.headers = headers;
+            self.has_read = true;
+        }
+
+        Ok(&self.headers)
+    }
+
+    #[inline(always)]
+    pub fn read_byte_record(&mut self, record: &mut ByteRecord) -> error::Result<bool> {
+        self.byte_headers()?;
+
+        if self.must_reemit_headers {
+            self.headers.clone_into(record);
+            self.must_reemit_headers = false;
+            return Ok(true);
+        }
+
+        self.read_byte_record_impl(record)
     }
 
     pub fn byte_records(&mut self) -> ByteRecordsIter<'_, R> {
@@ -254,7 +263,6 @@ mod tests {
     #[test]
     fn test_strip_bom() -> error::Result<()> {
         let mut reader = Reader::from_reader(Cursor::new("name,surname,age"));
-        reader.strip_bom()?;
 
         assert_eq!(
             reader.byte_records().next().unwrap()?,
@@ -262,7 +270,6 @@ mod tests {
         );
 
         let mut reader = Reader::from_reader(Cursor::new(b"\xef\xbb\xbfname,surname,age"));
-        reader.strip_bom()?;
 
         assert_eq!(
             reader.byte_records().next().unwrap()?,
