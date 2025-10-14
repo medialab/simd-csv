@@ -14,6 +14,18 @@ pub fn trim_trailing_crlf(slice: &[u8]) -> &[u8] {
     &slice[..len]
 }
 
+// #[inline]
+// pub fn trim_trailing_cr(slice: &[u8]) -> &[u8] {
+//     let mut len = slice.len();
+
+//     let has_cr = len >= 1 && slice[len - 1] == b'\r';
+
+//     len -= has_cr as usize;
+
+//     &slice[..len]
+// }
+
+#[inline]
 pub fn unquoted(cell: &[u8], quote: u8) -> Option<&[u8]> {
     let len = cell.len();
 

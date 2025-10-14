@@ -403,12 +403,12 @@ impl CoreReader {
                     } else if byte == b'\n' {
                         self.record_was_read = true;
                         self.state = Unquoted;
-                        record_builder.finalize_record();
+                        record_builder.finalize_field();
                         return (ReadResult::Record, pos + 1);
                     } else if byte == b'\r' && pos + 2 < input_len && input[pos + 2] == b'\n' {
                         self.record_was_read = true;
                         self.state = Unquoted;
-                        record_builder.finalize_record();
+                        record_builder.finalize_field();
                         return (ReadResult::Record, pos + 2);
                     } else {
                         self.state = Unquoted;
