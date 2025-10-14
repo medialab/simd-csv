@@ -352,6 +352,15 @@ mod tests {
 
         // assert_eq!(record, brec!["aaa\"aaa", "bbb"]);
 
+        let data = b"name,surname\n\r\rjohn,coucou";
+        let mut reader = Reader::from_reader(Cursor::new(data));
+        let records = reader.byte_records().collect::<Result<Vec<_>, _>>()?;
+
+        assert_eq!(
+            records,
+            vec![brec!["name", "surname"], brec!["john", "coucou"]]
+        );
+
         Ok(())
     }
 }
