@@ -1,7 +1,5 @@
 use std::io::{BufRead, BufReader, Read, Result};
 
-use crate::ext::StripBom;
-
 pub struct ScratchBuffer<R> {
     inner: BufReader<R>,
     scratch: Vec<u8>,
@@ -83,10 +81,5 @@ impl<R: Read> ScratchBuffer<R> {
 
             &self.scratch
         }
-    }
-
-    #[inline(always)]
-    pub fn strip_bom(&mut self) -> Result<()> {
-        self.inner.strip_bom()
     }
 }

@@ -3,7 +3,7 @@ use std::io::Read;
 use crate::buffer::ScratchBuffer;
 use crate::core::{CoreReader, ReadResult};
 use crate::error;
-use crate::utils::trim_trailing_crlf;
+use crate::utils::{trim_bom, trim_trailing_crlf};
 
 pub struct SplitterBuilder {
     delimiter: u8,
@@ -51,6 +51,7 @@ impl SplitterBuilder {
         Splitter {
             buffer: ScratchBuffer::with_optional_capacity(self.buffer_capacity, reader),
             inner: CoreReader::new(self.delimiter, self.quote),
+            has_read: false,
         }
     }
 }
@@ -58,6 +59,7 @@ impl SplitterBuilder {
 pub struct Splitter<R> {
     buffer: ScratchBuffer<R>,
     inner: CoreReader,
+    has_read: bool,
 }
 
 impl<R: Read> Splitter<R> {
@@ -66,13 +68,23 @@ impl<R: Read> Splitter<R> {
     }
 
     #[inline(always)]
-    pub fn strip_bom(&mut self) -> error::Result<()> {
-        self.buffer.strip_bom()?;
+    fn on_first_read(&mut self) -> error::Result<()> {
+        if self.has_read {
+            return Ok(());
+        }
+
+        let input = self.buffer.fill_buf()?;
+        let bom_len = trim_bom(input);
+        self.buffer.consume(bom_len);
+        self.has_read = true;
+
         Ok(())
     }
 
     pub fn count_records(&mut self) -> error::Result<u64> {
         use ReadResult::*;
+
+        self.on_first_read()?;
 
         let mut count: u64 = 0;
 
@@ -97,6 +109,8 @@ impl<R: Read> Splitter<R> {
 
     pub fn split_record(&mut self) -> error::Result<Option<&[u8]>> {
         use ReadResult::*;
+
+        self.on_first_read()?;
 
         self.buffer.reset();
 
