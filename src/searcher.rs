@@ -1,3 +1,5 @@
+use std::iter::FusedIterator;
+
 #[cfg(target_arch = "x86_64")]
 mod x86_64 {
     use std::marker::PhantomData;
@@ -395,6 +397,8 @@ pub struct Indices<'s, 'h> {
     #[cfg(not(any(target_arch = "x86_64", target_arch = "aarch64")))]
     inner: memchr::arch::all::memchr::ThreeIter<'s, 'h>,
 }
+
+impl<'s, 'h> FusedIterator for Indices<'s, 'h> {}
 
 impl<'s, 'h> Iterator for Indices<'s, 'h> {
     type Item = usize;
