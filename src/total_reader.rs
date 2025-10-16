@@ -1,6 +1,7 @@
 use crate::core::{CoreReader, ReadResult};
 use crate::error;
 use crate::records::{ByteRecord, ByteRecordBuilder};
+use crate::utils::trim_bom;
 
 pub struct TotalReaderBuilder {
     delimiter: u8,
@@ -53,8 +54,17 @@ impl<'b> TotalReader<'b> {
         TotalReaderBuilder::new().from_bytes(bytes)
     }
 
+    #[inline(always)]
+    fn strip_bom(&mut self) {
+        if self.pos == 0 {
+            self.pos = trim_bom(self.bytes);
+        }
+    }
+
     pub fn count_records(&mut self) -> u64 {
         use ReadResult::*;
+
+        self.strip_bom();
 
         let mut count: u64 = 0;
 
@@ -78,6 +88,8 @@ impl<'b> TotalReader<'b> {
     pub fn read_byte_record(&mut self, record: &mut ByteRecord) -> error::Result<bool> {
         use ReadResult::*;
 
+        self.strip_bom();
+
         record.clear();
 
         let mut record_builder = ByteRecordBuilder::wrap(record);
@@ -100,6 +112,40 @@ impl<'b> TotalReader<'b> {
                     return Ok(true);
                 }
             };
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn count_records(data: &str) -> u64 {
+        let mut reader = TotalReader::from_bytes(data.as_bytes());
+        reader.count_records()
+    }
+
+    #[test]
+    fn test_count() {
+        // Empty
+        assert_eq!(count_records(""), 0);
+
+        // Single cells with various empty lines
+        let tests = vec![
+            "name\njohn\nlucy",
+            "name\njohn\nlucy\n",
+            "name\n\njohn\r\nlucy\n",
+            "name\n\njohn\r\nlucy\n\n",
+            "name\n\n\njohn\r\n\r\nlucy\n\n\n",
+            "\nname\njohn\nlucy",
+            "\n\nname\njohn\nlucy",
+            "\r\n\r\nname\njohn\nlucy",
+            "name\njohn\nlucy\r\n",
+            "name\njohn\nlucy\r\n\r\n",
+        ];
+
+        for test in tests.iter() {
+            assert_eq!(count_records(test), 3, "string={:?}", test);
         }
     }
 }
