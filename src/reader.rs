@@ -344,6 +344,55 @@ mod tests {
     }
 
     #[test]
+    fn test_byte_headers() -> error::Result<()> {
+        let data = b"name,surname\njohn,dandy";
+
+        // Headers, call before read
+        let mut reader = Reader::from_reader(Cursor::new(data));
+        assert_eq!(reader.byte_headers()?, &brec!["name", "surname"]);
+        assert_eq!(
+            reader.byte_records().next().unwrap()?,
+            brec!["john", "dandy"]
+        );
+
+        // Headers, call after read
+        let mut reader = Reader::from_reader(Cursor::new(data));
+        assert_eq!(
+            reader.byte_records().next().unwrap()?,
+            brec!["john", "dandy"]
+        );
+        assert_eq!(reader.byte_headers()?, &brec!["name", "surname"]);
+
+        // No headers, call before read
+        let mut reader = Reader::from_reader_no_headers(Cursor::new(data));
+        assert_eq!(reader.byte_headers()?, &brec!["name", "surname"]);
+        assert_eq!(
+            reader.byte_records().next().unwrap()?,
+            brec!["name", "surname"]
+        );
+
+        // No headers, call after read
+        let mut reader = Reader::from_reader_no_headers(Cursor::new(data));
+        assert_eq!(
+            reader.byte_records().next().unwrap()?,
+            brec!["name", "surname"]
+        );
+        assert_eq!(reader.byte_headers()?, &brec!["name", "surname"]);
+
+        // Headers, empty
+        let mut reader = Reader::from_reader(Cursor::new(b""));
+        assert_eq!(reader.byte_headers()?, &brec![]);
+        assert!(reader.byte_records().next().is_none());
+
+        // No headers, empty
+        let mut reader = Reader::from_reader_no_headers(Cursor::new(b""));
+        assert_eq!(reader.byte_headers()?, &brec![]);
+        assert!(reader.byte_records().next().is_none());
+
+        Ok(())
+    }
+
+    #[test]
     fn test_weirdness() -> error::Result<()> {
         // Data after quotes, before next delimiter
         let data =
