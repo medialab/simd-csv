@@ -1,11 +1,11 @@
 use crate::core::{CoreReader, ReadResult};
-use crate::error;
 use crate::records::{ByteRecord, ByteRecordBuilder};
 use crate::utils::trim_bom;
 
 pub struct TotalReaderBuilder {
     delimiter: u8,
     quote: u8,
+    has_headers: bool,
 }
 
 impl Default for TotalReaderBuilder {
@@ -13,6 +13,7 @@ impl Default for TotalReaderBuilder {
         Self {
             delimiter: b',',
             quote: b'"',
+            has_headers: true,
         }
     }
 }
@@ -32,11 +33,19 @@ impl TotalReaderBuilder {
         self
     }
 
+    pub fn has_headers(&mut self, yes: bool) -> &mut Self {
+        self.has_headers = yes;
+        self
+    }
+
     pub fn from_bytes<'b>(&self, bytes: &'b [u8]) -> TotalReader<'b> {
         TotalReader {
             inner: CoreReader::new(self.delimiter, self.quote),
             bytes,
             pos: 0,
+            headers: ByteRecord::new(),
+            has_read: false,
+            has_headers: self.has_headers,
         }
     }
 }
@@ -47,6 +56,9 @@ pub struct TotalReader<'b> {
     inner: CoreReader,
     bytes: &'b [u8],
     pos: usize,
+    headers: ByteRecord,
+    has_read: bool,
+    has_headers: bool,
 }
 
 impl<'b> TotalReader<'b> {
@@ -54,17 +66,40 @@ impl<'b> TotalReader<'b> {
         TotalReaderBuilder::new().from_bytes(bytes)
     }
 
-    #[inline(always)]
-    fn strip_bom(&mut self) {
-        if self.pos == 0 {
-            self.pos = trim_bom(self.bytes);
+    #[inline]
+    fn on_first_read(&mut self) {
+        if self.has_read {
+            return;
         }
+
+        // Trimming BOM
+        let bom_len = trim_bom(self.bytes);
+        self.pos += bom_len;
+
+        // Reading headers
+        let mut headers = ByteRecord::new();
+
+        let has_data = self.read_byte_record_impl(&mut headers);
+
+        if has_data && !self.has_headers {
+            self.pos = bom_len;
+        }
+
+        self.headers = headers;
+        self.has_read = true;
+    }
+
+    #[inline]
+    pub fn byte_headers(&mut self) -> &ByteRecord {
+        self.on_first_read();
+
+        &self.headers
     }
 
     pub fn count_records(&mut self) -> u64 {
         use ReadResult::*;
 
-        self.strip_bom();
+        self.on_first_read();
 
         let mut count: u64 = 0;
 
@@ -82,13 +117,11 @@ impl<'b> TotalReader<'b> {
             };
         }
 
-        count
+        count.saturating_sub(if self.has_headers { 1 } else { 0 })
     }
 
-    pub fn read_byte_record(&mut self, record: &mut ByteRecord) -> error::Result<bool> {
+    fn read_byte_record_impl(&mut self, record: &mut ByteRecord) -> bool {
         use ReadResult::*;
-
-        self.strip_bom();
 
         record.clear();
 
@@ -103,15 +136,49 @@ impl<'b> TotalReader<'b> {
 
             match result {
                 End => {
-                    return Ok(false);
+                    return false;
                 }
                 Cr | Lf | InputEmpty => {
                     continue;
                 }
                 Record => {
-                    return Ok(true);
+                    return true;
                 }
             };
+        }
+    }
+
+    #[inline(always)]
+    pub fn read_byte_record(&mut self, record: &mut ByteRecord) -> bool {
+        self.on_first_read();
+        self.read_byte_record_impl(record)
+    }
+
+    #[inline(always)]
+    pub fn byte_records<'r>(&'r mut self) -> ByteRecordsIter<'r, 'b> {
+        ByteRecordsIter {
+            reader: self,
+            record: ByteRecord::new(),
+        }
+    }
+}
+
+pub struct ByteRecordsIter<'r, 'b> {
+    reader: &'r mut TotalReader<'b>,
+    record: ByteRecord,
+}
+
+impl<'r, 'b> Iterator for ByteRecordsIter<'r, 'b> {
+    type Item = ByteRecord;
+
+    #[inline]
+    fn next(&mut self) -> Option<Self::Item> {
+        // NOTE: cloning the record will not carry over excess capacity
+        // because the record only contains `Vec` currently.
+        if self.reader.read_byte_record(&mut self.record) {
+            Some(self.record.clone())
+        } else {
+            None
         }
     }
 }
@@ -120,8 +187,18 @@ impl<'b> TotalReader<'b> {
 mod tests {
     use super::*;
 
+    use crate::brec;
+
+    impl<'b> TotalReader<'b> {
+        fn from_bytes_no_headers(bytes: &'b [u8]) -> Self {
+            TotalReaderBuilder::new()
+                .has_headers(false)
+                .from_bytes(bytes)
+        }
+    }
+
     fn count_records(data: &str) -> u64 {
-        let mut reader = TotalReader::from_bytes(data.as_bytes());
+        let mut reader = TotalReader::from_bytes_no_headers(data.as_bytes());
         reader.count_records()
     }
 
@@ -147,5 +224,52 @@ mod tests {
         for test in tests.iter() {
             assert_eq!(count_records(test), 3, "string={:?}", test);
         }
+    }
+
+    #[test]
+    fn test_byte_headers() {
+        let data = b"name,surname\njohn,dandy";
+
+        // Headers, call before read
+        let mut reader = TotalReader::from_bytes(data);
+        assert_eq!(reader.byte_headers(), &brec!["name", "surname"]);
+        assert_eq!(
+            reader.byte_records().next().unwrap(),
+            brec!["john", "dandy"]
+        );
+
+        // Headers, call after read
+        let mut reader = TotalReader::from_bytes(data);
+        assert_eq!(
+            reader.byte_records().next().unwrap(),
+            brec!["john", "dandy"]
+        );
+        assert_eq!(reader.byte_headers(), &brec!["name", "surname"]);
+
+        // No headers, call before read
+        let mut reader = TotalReader::from_bytes_no_headers(data);
+        assert_eq!(reader.byte_headers(), &brec!["name", "surname"]);
+        assert_eq!(
+            reader.byte_records().next().unwrap(),
+            brec!["name", "surname"]
+        );
+
+        // No headers, call after read
+        let mut reader = TotalReader::from_bytes_no_headers(data);
+        assert_eq!(
+            reader.byte_records().next().unwrap(),
+            brec!["name", "surname"]
+        );
+        assert_eq!(reader.byte_headers(), &brec!["name", "surname"]);
+
+        // Headers, empty
+        let mut reader = TotalReader::from_bytes(b"");
+        assert_eq!(reader.byte_headers(), &brec![]);
+        assert!(reader.byte_records().next().is_none());
+
+        // No headers, empty
+        let mut reader = TotalReader::from_bytes_no_headers(b"");
+        assert_eq!(reader.byte_headers(), &brec![]);
+        assert!(reader.byte_records().next().is_none());
     }
 }

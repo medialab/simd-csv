@@ -162,7 +162,7 @@ fn main() -> anyhow::Result<()> {
 
             let mut count: u64 = 0;
 
-            while reader.read_byte_record(&mut record)? {
+            while reader.read_byte_record(&mut record) {
                 count += 1;
             }
 

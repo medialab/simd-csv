@@ -205,6 +205,7 @@ pub struct ByteRecordsIter<'r, R> {
 impl<'r, R: Read> Iterator for ByteRecordsIter<'r, R> {
     type Item = error::Result<ByteRecord>;
 
+    #[inline]
     fn next(&mut self) -> Option<Self::Item> {
         // NOTE: cloning the record will not carry over excess capacity
         // because the record only contains `Vec` currently.
@@ -224,6 +225,7 @@ pub struct ByteRecordsIntoIter<R> {
 impl<R: Read> Iterator for ByteRecordsIntoIter<R> {
     type Item = error::Result<ByteRecord>;
 
+    #[inline]
     fn next(&mut self) -> Option<Self::Item> {
         // NOTE: cloning the record will not carry over excess capacity
         // because the record only contains `Vec` currently.
