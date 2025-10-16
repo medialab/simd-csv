@@ -120,6 +120,26 @@ impl<'b> TotalReader<'b> {
         count.saturating_sub(if self.has_headers { 1 } else { 0 })
     }
 
+    pub fn split_record(&mut self) -> Option<&[u8]> {
+        use ReadResult::*;
+
+        self.on_first_read();
+
+        let starting_pos = self.pos;
+
+        loop {
+            let (result, pos) = self.inner.split_record(&self.bytes[self.pos..]);
+
+            self.pos += pos;
+
+            match result {
+                End => return None,
+                InputEmpty | Cr | Lf => continue,
+                Record => return Some(&self.bytes[starting_pos..self.pos]),
+            }
+        }
+    }
+
     fn read_byte_record_impl(&mut self, record: &mut ByteRecord) -> bool {
         use ReadResult::*;
 
@@ -202,6 +222,18 @@ mod tests {
         reader.count_records()
     }
 
+    fn split_records(data: &str) -> u64 {
+        let mut reader = TotalReader::from_bytes_no_headers(data.as_bytes());
+
+        let mut count: u64 = 0;
+
+        while reader.split_record().is_some() {
+            count += 1;
+        }
+
+        count
+    }
+
     #[test]
     fn test_count() {
         // Empty
@@ -223,6 +255,7 @@ mod tests {
 
         for test in tests.iter() {
             assert_eq!(count_records(test), 3, "string={:?}", test);
+            assert_eq!(split_records(test), 3, "string={:?}", test);
         }
     }
 
