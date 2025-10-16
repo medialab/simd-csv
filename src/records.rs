@@ -21,6 +21,11 @@ impl<'a> ZeroCopyByteRecord<'a> {
         }
     }
 
+    #[inline]
+    pub(crate) fn to_parts(&self) -> (Vec<usize>, Vec<u8>) {
+        (self.seps.to_vec(), self.slice.to_vec())
+    }
+
     #[inline(always)]
     pub fn len(&self) -> usize {
         // NOTE: an empty zero copy record cannot be constructed,

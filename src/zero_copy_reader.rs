@@ -3,13 +3,15 @@ use std::io::Read;
 use crate::buffer::ScratchBuffer;
 use crate::core::{CoreReader, ReadResult};
 use crate::error::{self, Error};
-use crate::records::ZeroCopyByteRecord;
+use crate::records::{ByteRecord, ZeroCopyByteRecord};
+use crate::utils::trim_bom;
 
 pub struct ZeroCopyReaderBuilder {
     delimiter: u8,
     quote: u8,
     buffer_capacity: Option<usize>,
     flexible: bool,
+    has_headers: bool,
 }
 
 impl Default for ZeroCopyReaderBuilder {
@@ -19,6 +21,7 @@ impl Default for ZeroCopyReaderBuilder {
             quote: b'"',
             buffer_capacity: None,
             flexible: false,
+            has_headers: true,
         }
     }
 }
@@ -54,13 +57,22 @@ impl ZeroCopyReaderBuilder {
         self
     }
 
+    pub fn has_headers(&mut self, yes: bool) -> &mut Self {
+        self.has_headers = yes;
+        self
+    }
+
     pub fn from_reader<R: Read>(&self, reader: R) -> ZeroCopyReader<R> {
         ZeroCopyReader {
             buffer: ScratchBuffer::with_optional_capacity(self.buffer_capacity, reader),
             inner: CoreReader::new(self.delimiter, self.quote),
-            field_count: None,
+            headers_seps: Vec::new(),
+            headers_slice: Vec::new(),
+            headers: ByteRecord::new(),
             seps: Vec::new(),
             flexible: self.flexible,
+            has_read: false,
+            must_reemit_headers: !self.has_headers,
         }
     }
 }
@@ -68,9 +80,13 @@ impl ZeroCopyReaderBuilder {
 pub struct ZeroCopyReader<R> {
     buffer: ScratchBuffer<R>,
     inner: CoreReader,
-    field_count: Option<usize>,
+    headers: ByteRecord,
+    headers_seps: Vec<usize>,
+    headers_slice: Vec<u8>,
     seps: Vec<usize>,
     flexible: bool,
+    has_read: bool,
+    must_reemit_headers: bool,
 }
 
 impl<R: Read> ZeroCopyReader<R> {
@@ -84,58 +100,45 @@ impl<R: Read> ZeroCopyReader<R> {
             return Ok(());
         }
 
-        match self.field_count {
-            Some(expected) => {
-                if written != expected {
-                    return Err(Error::unequal_lengths(expected, written));
-                }
-            }
-            None => {
-                self.field_count = Some(written);
-            }
+        let headers_len = self.headers_seps.len() + 1;
+
+        if self.has_read && written != headers_len {
+            return Err(Error::unequal_lengths(headers_len, written));
         }
 
         Ok(())
     }
 
-    pub fn strip_bom(&mut self) -> error::Result<()> {
-        self.buffer.strip_bom()?;
-        Ok(())
-    }
+    #[inline]
+    pub fn byte_headers(&mut self) -> error::Result<&ByteRecord> {
+        if !self.has_read {
+            // Trimming BOM
+            let input = self.buffer.fill_buf()?;
+            let bom_len = trim_bom(input);
+            self.buffer.consume(bom_len);
 
-    pub fn peek_byte_record(&mut self, consume: bool) -> error::Result<ZeroCopyByteRecord<'_>> {
-        use ReadResult::*;
+            let mut headers_seps = Vec::new();
+            let mut headers_slice = Vec::new();
+            let mut byte_headers = ByteRecord::new();
 
-        self.buffer.reset();
-        self.seps.clear();
-
-        let seps_offset = self.buffer.saved().len();
-        let input = self.buffer.fill_buf()?;
-
-        let (result, pos) =
-            self.inner
-                .split_record_and_find_separators(input, seps_offset, &mut self.seps);
-
-        match result {
-            End => Ok(ZeroCopyByteRecord::new(b"", &self.seps, self.inner.quote)),
-            Cr | Lf | InputEmpty => Err(Error::invalid_headers()),
-            Record => {
-                if consume {
-                    self.buffer.consume(pos);
-                }
-
-                let record = ZeroCopyByteRecord::new(
-                    &self.buffer.buffer()[pos..],
-                    &self.seps,
-                    self.inner.quote,
-                );
-
-                Ok(record)
+            if let Some(headers) = self.read_byte_record_impl()? {
+                (headers_seps, headers_slice) = headers.to_parts();
+                byte_headers = headers.to_byte_record();
+            } else {
+                self.must_reemit_headers = false;
             }
+
+            self.headers_seps = headers_seps;
+            self.headers_slice = headers_slice;
+            self.headers = byte_headers;
+
+            self.has_read = true;
         }
+
+        Ok(&self.headers)
     }
 
-    pub fn read_byte_record(&mut self) -> error::Result<Option<ZeroCopyByteRecord<'_>>> {
+    fn read_byte_record_impl(&mut self) -> error::Result<Option<ZeroCopyByteRecord<'_>>> {
         use ReadResult::*;
 
         self.buffer.reset();
@@ -174,19 +177,47 @@ impl<R: Read> ZeroCopyReader<R> {
             };
         }
     }
+
+    #[inline(always)]
+    pub fn read_byte_record(&mut self) -> error::Result<Option<ZeroCopyByteRecord<'_>>> {
+        self.byte_headers()?;
+
+        if self.must_reemit_headers {
+            self.must_reemit_headers = false;
+            return Ok(Some(ZeroCopyByteRecord::new(
+                &self.headers_slice,
+                &self.headers_seps,
+                self.inner.quote,
+            )));
+        }
+
+        self.read_byte_record_impl()
+    }
 }
 
 #[cfg(test)]
 mod tests {
     use std::io::Cursor;
 
+    use crate::brec;
+
     use super::*;
+
+    impl<R: Read> ZeroCopyReader<R> {
+        fn from_reader_no_headers(reader: R) -> Self {
+            ZeroCopyReaderBuilder::new()
+                .has_headers(false)
+                .from_reader(reader)
+        }
+    }
 
     #[test]
     fn test_read_zero_copy_byte_record() -> error::Result<()> {
         let csv = "name,surname,age\n\"john\",\"landy, the \"\"everlasting\"\" bastard\",45\nlucy,rose,\"67\"\njermaine,jackson,\"89\"\n\nkarine,loucan,\"52\"\nrose,\"glib\",12\n\"guillaume\",\"plique\",\"42\"\r\n";
 
-        let mut reader = ZeroCopyReaderBuilder::with_capacity(32).from_reader(Cursor::new(csv));
+        let mut reader = ZeroCopyReaderBuilder::with_capacity(32)
+            .has_headers(false)
+            .from_reader(Cursor::new(csv));
         let mut records = Vec::new();
 
         let expected = vec![
@@ -225,7 +256,7 @@ mod tests {
         let data = "name\n\"\"\nlucy\n\"\"";
 
         // Zero-copy
-        let mut reader = ZeroCopyReader::from_reader(Cursor::new(data));
+        let mut reader = ZeroCopyReader::from_reader_no_headers(Cursor::new(data));
 
         let expected = vec![
             vec!["name".as_bytes().to_vec()],
@@ -242,6 +273,55 @@ mod tests {
         }
 
         assert_eq!(records, expected);
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_byte_headers() -> error::Result<()> {
+        let data = b"name,surname\njohn,dandy";
+
+        // Headers, call before read
+        let mut reader = ZeroCopyReader::from_reader(Cursor::new(data));
+        assert_eq!(reader.byte_headers()?, &brec!["name", "surname"]);
+        assert_eq!(
+            reader.read_byte_record()?.unwrap().to_byte_record(),
+            brec!["john", "dandy"]
+        );
+
+        // Headers, call after read
+        let mut reader = ZeroCopyReader::from_reader(Cursor::new(data));
+        assert_eq!(
+            reader.read_byte_record()?.unwrap().to_byte_record(),
+            brec!["john", "dandy"]
+        );
+        assert_eq!(reader.byte_headers()?, &brec!["name", "surname"]);
+
+        // No headers, call before read
+        let mut reader = ZeroCopyReader::from_reader_no_headers(Cursor::new(data));
+        assert_eq!(reader.byte_headers()?, &brec!["name", "surname"]);
+        assert_eq!(
+            reader.read_byte_record()?.unwrap().to_byte_record(),
+            brec!["name", "surname"]
+        );
+
+        // No headers, call after read
+        let mut reader = ZeroCopyReader::from_reader_no_headers(Cursor::new(data));
+        assert_eq!(
+            reader.read_byte_record()?.unwrap().to_byte_record(),
+            brec!["name", "surname"]
+        );
+        assert_eq!(reader.byte_headers()?, &brec!["name", "surname"]);
+
+        // Headers, empty
+        let mut reader = ZeroCopyReader::from_reader(Cursor::new(b""));
+        assert_eq!(reader.byte_headers()?, &brec![]);
+        assert!(reader.read_byte_record()?.is_none());
+
+        // No headers, empty
+        let mut reader = ZeroCopyReader::from_reader_no_headers(Cursor::new(b""));
+        assert_eq!(reader.byte_headers()?, &brec![]);
+        assert!(reader.read_byte_record()?.is_none());
 
         Ok(())
     }

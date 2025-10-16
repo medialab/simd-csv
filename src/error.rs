@@ -4,7 +4,6 @@ use std::{error, fmt, io, result};
 pub enum ErrorKind {
     Io(io::Error),
     UnequalLengths { expected_len: usize, len: usize },
-    InvalidHeaders,
 }
 
 #[derive(Debug)]
@@ -13,10 +12,6 @@ pub struct Error(ErrorKind);
 impl Error {
     pub(crate) fn unequal_lengths(expected_len: usize, len: usize) -> Self {
         Self(ErrorKind::UnequalLengths { expected_len, len })
-    }
-
-    pub(crate) fn invalid_headers() -> Self {
-        Self(ErrorKind::InvalidHeaders)
     }
 
     pub fn is_io_error(&self) -> bool {
@@ -55,9 +50,6 @@ impl fmt::Display for Error {
                 "CSV error: found record with {} fields, but the previous record has {} fields",
                 len, expected_len
             ),
-            ErrorKind::InvalidHeaders => {
-                write!(f, "invalid headers or headers too long for buffer")
-            }
         }
     }
 }

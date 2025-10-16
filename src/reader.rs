@@ -107,7 +107,7 @@ impl<R: Read> Reader<R> {
         Ok(())
     }
 
-    pub fn read_byte_record_impl(&mut self, record: &mut ByteRecord) -> error::Result<bool> {
+    fn read_byte_record_impl(&mut self, record: &mut ByteRecord) -> error::Result<bool> {
         use ReadResult::*;
 
         record.clear();
