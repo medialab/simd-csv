@@ -20,7 +20,7 @@ impl Default for ReaderBuilder {
             quote: b'"',
             buffer_capacity: None,
             flexible: false,
-            has_headers: false,
+            has_headers: true,
         }
     }
 }
@@ -233,6 +233,12 @@ mod tests {
 
     use super::*;
 
+    impl<R: Read> Reader<R> {
+        fn from_reader_no_headers(reader: R) -> Self {
+            ReaderBuilder::new().has_headers(false).from_reader(reader)
+        }
+    }
+
     #[test]
     fn test_read_byte_record() -> error::Result<()> {
         let csv = "name,surname,age\n\"john\",\"landy, the \"\"everlasting\"\" bastard\",45\n\"\"\"ok\"\"\",whatever,dude\nlucy,rose,\"67\"\njermaine,jackson,\"89\"\n\nkarine,loucan,\"52\"\nrose,\"glib\",12\n\"guillaume\",\"plique\",\"42\"\r\n";
@@ -249,7 +255,9 @@ mod tests {
         ];
 
         for capacity in [32usize, 4, 3, 2, 1] {
-            let mut reader = ReaderBuilder::with_capacity(capacity).from_reader(Cursor::new(csv));
+            let mut reader = ReaderBuilder::with_capacity(capacity)
+                .has_headers(false)
+                .from_reader(Cursor::new(csv));
 
             assert_eq!(
                 reader.byte_records().collect::<Result<Vec<_>, _>>()?,
@@ -262,14 +270,15 @@ mod tests {
 
     #[test]
     fn test_strip_bom() -> error::Result<()> {
-        let mut reader = Reader::from_reader(Cursor::new("name,surname,age"));
+        let mut reader = Reader::from_reader_no_headers(Cursor::new("name,surname,age"));
 
         assert_eq!(
             reader.byte_records().next().unwrap()?,
             brec!["name", "surname", "age"]
         );
 
-        let mut reader = Reader::from_reader(Cursor::new(b"\xef\xbb\xbfname,surname,age"));
+        let mut reader =
+            Reader::from_reader_no_headers(Cursor::new(b"\xef\xbb\xbfname,surname,age"));
 
         assert_eq!(
             reader.byte_records().next().unwrap()?,
@@ -284,7 +293,7 @@ mod tests {
         let data = "name\n\"\"\nlucy\n\"\"";
 
         // Read
-        let reader = Reader::from_reader(Cursor::new(data));
+        let reader = Reader::from_reader_no_headers(Cursor::new(data));
 
         let expected = vec![brec!["name"], brec![""], brec!["lucy"], brec![""]];
 
@@ -297,7 +306,7 @@ mod tests {
 
     #[test]
     fn test_crlf() -> error::Result<()> {
-        let reader = Reader::from_reader(Cursor::new(
+        let reader = Reader::from_reader_no_headers(Cursor::new(
             "name,surname\r\nlucy,\"john\"\r\nevan,zhong\r\nbéatrice,glougou\r\n",
         ));
 
@@ -317,7 +326,7 @@ mod tests {
 
     #[test]
     fn test_quote_always() -> error::Result<()> {
-        let reader = Reader::from_reader(Cursor::new(
+        let reader = Reader::from_reader_no_headers(Cursor::new(
             "\"name\",\"surname\"\n\"lucy\",\"rose\"\n\"john\",\"mayhew\"",
         ));
 
@@ -339,7 +348,7 @@ mod tests {
         // Data after quotes, before next delimiter
         let data =
             b"name,surname\n\"test\"  \"wat\", ok\ntest \"wat\",ok  \ntest,\"whatever\"  ok\n\"test\"   there,\"ok\"\r\n";
-        let mut reader = Reader::from_reader(Cursor::new(data));
+        let mut reader = Reader::from_reader_no_headers(Cursor::new(data));
 
         let records = reader.byte_records().collect::<Result<Vec<_>, _>>()?;
 
@@ -354,13 +363,13 @@ mod tests {
         assert_eq!(records, expected);
 
         // let data = "aaa\"aaa,bbb";
-        // let mut reader = Reader::from_reader(Cursor::new(data));
+        // let mut reader = Reader::from_reader_no_headers(Cursor::new(data));
         // let record = reader.byte_records().next().unwrap().unwrap();
 
         // assert_eq!(record, brec!["aaa\"aaa", "bbb"]);
 
         let data = b"name,surname\n\r\rjohn,coucou";
-        let mut reader = Reader::from_reader(Cursor::new(data));
+        let mut reader = Reader::from_reader_no_headers(Cursor::new(data));
         let records = reader.byte_records().collect::<Result<Vec<_>, _>>()?;
 
         assert_eq!(
