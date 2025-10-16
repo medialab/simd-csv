@@ -137,31 +137,41 @@ impl<R: Read> Reader<R> {
     }
 
     #[inline]
-    pub fn byte_headers(&mut self) -> error::Result<&ByteRecord> {
-        if !self.has_read {
-            // Trimming BOM
-            let input = self.buffer.fill_buf()?;
-            let bom_len = trim_bom(input);
-            self.buffer.consume(bom_len);
-
-            let mut headers = ByteRecord::new();
-
-            let has_data = self.read_byte_record_impl(&mut headers)?;
-
-            if !has_data {
-                self.must_reemit_headers = false;
-            }
-
-            self.headers = headers;
-            self.has_read = true;
+    fn on_first_read(&mut self) -> error::Result<()> {
+        if self.has_read {
+            return Ok(());
         }
+
+        // Trimming BOM
+        let input = self.buffer.fill_buf()?;
+        let bom_len = trim_bom(input);
+        self.buffer.consume(bom_len);
+
+        // Reading headers
+        let mut headers = ByteRecord::new();
+
+        let has_data = self.read_byte_record_impl(&mut headers)?;
+
+        if !has_data {
+            self.must_reemit_headers = false;
+        }
+
+        self.headers = headers;
+        self.has_read = true;
+
+        Ok(())
+    }
+
+    #[inline]
+    pub fn byte_headers(&mut self) -> error::Result<&ByteRecord> {
+        self.on_first_read()?;
 
         Ok(&self.headers)
     }
 
     #[inline(always)]
     pub fn read_byte_record(&mut self, record: &mut ByteRecord) -> error::Result<bool> {
-        self.byte_headers()?;
+        self.on_first_read()?;
 
         if self.must_reemit_headers {
             self.headers.clone_into(record);

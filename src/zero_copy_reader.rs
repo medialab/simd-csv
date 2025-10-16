@@ -110,30 +110,40 @@ impl<R: Read> ZeroCopyReader<R> {
     }
 
     #[inline]
-    pub fn byte_headers(&mut self) -> error::Result<&ByteRecord> {
-        if !self.has_read {
-            // Trimming BOM
-            let input = self.buffer.fill_buf()?;
-            let bom_len = trim_bom(input);
-            self.buffer.consume(bom_len);
-
-            let mut headers_seps = Vec::new();
-            let mut headers_slice = Vec::new();
-            let mut byte_headers = ByteRecord::new();
-
-            if let Some(headers) = self.read_byte_record_impl()? {
-                (headers_seps, headers_slice) = headers.to_parts();
-                byte_headers = headers.to_byte_record();
-            } else {
-                self.must_reemit_headers = false;
-            }
-
-            self.headers_seps = headers_seps;
-            self.headers_slice = headers_slice;
-            self.headers = byte_headers;
-
-            self.has_read = true;
+    fn on_first_read(&mut self) -> error::Result<()> {
+        if self.has_read {
+            return Ok(());
         }
+
+        // Trimming BOM
+        let input = self.buffer.fill_buf()?;
+        let bom_len = trim_bom(input);
+        self.buffer.consume(bom_len);
+
+        // Reading headers
+        let mut headers_seps = Vec::new();
+        let mut headers_slice = Vec::new();
+        let mut byte_headers = ByteRecord::new();
+
+        if let Some(headers) = self.read_byte_record_impl()? {
+            (headers_seps, headers_slice) = headers.to_parts();
+            byte_headers = headers.to_byte_record();
+        } else {
+            self.must_reemit_headers = false;
+        }
+
+        self.headers_seps = headers_seps;
+        self.headers_slice = headers_slice;
+        self.headers = byte_headers;
+
+        self.has_read = true;
+
+        Ok(())
+    }
+
+    #[inline]
+    pub fn byte_headers(&mut self) -> error::Result<&ByteRecord> {
+        self.on_first_read()?;
 
         Ok(&self.headers)
     }
@@ -180,7 +190,7 @@ impl<R: Read> ZeroCopyReader<R> {
 
     #[inline(always)]
     pub fn read_byte_record(&mut self) -> error::Result<Option<ZeroCopyByteRecord<'_>>> {
-        self.byte_headers()?;
+        self.on_first_read()?;
 
         if self.must_reemit_headers {
             self.must_reemit_headers = false;
