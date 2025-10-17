@@ -195,6 +195,10 @@ impl<R: Read> Reader<R> {
             record: ByteRecord::new(),
         }
     }
+
+    pub fn into_inner(self) -> R {
+        self.buffer.into_inner()
+    }
 }
 
 pub struct ByteRecordsIter<'r, R> {
