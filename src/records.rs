@@ -1,5 +1,6 @@
 use std::borrow::Cow;
 use std::fmt;
+use std::hash::{Hash, Hasher};
 use std::ops::Index;
 
 use crate::debug;
@@ -178,7 +179,7 @@ impl<'a> Index<usize> for ZeroCopyByteRecord<'a> {
     }
 }
 
-#[derive(Default, Clone)]
+#[derive(Default, Clone, Eq)]
 pub struct ByteRecord {
     data: Vec<u8>,
     bounds: Vec<(usize, usize)>,
@@ -263,6 +264,17 @@ impl PartialEq for ByteRecord {
         self.iter()
             .zip(other.iter())
             .all(|(self_cell, other_cell)| self_cell == other_cell)
+    }
+}
+
+impl Hash for ByteRecord {
+    #[inline]
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        state.write_usize(self.len());
+
+        for cell in self.iter() {
+            state.write(cell);
+        }
     }
 }
 
