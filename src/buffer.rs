@@ -82,4 +82,8 @@ impl<R: Read> ScratchBuffer<R> {
             &self.scratch
         }
     }
+
+    pub fn into_bufreader(self) -> BufReader<R> {
+        self.inner
+    }
 }

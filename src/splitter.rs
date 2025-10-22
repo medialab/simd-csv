@@ -1,4 +1,4 @@
-use std::io::Read;
+use std::io::{BufReader, Read};
 
 use crate::buffer::ScratchBuffer;
 use crate::core::{CoreReader, ReadResult};
@@ -135,6 +135,10 @@ impl<R: Read> Splitter<R> {
                 }
             };
         }
+    }
+
+    pub fn into_bufreader(self) -> BufReader<R> {
+        self.buffer.into_bufreader()
     }
 }
 
