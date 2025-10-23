@@ -83,7 +83,8 @@ impl<R: Read> ScratchBuffer<R> {
         }
     }
 
-    pub fn into_bufreader(self) -> BufReader<R> {
+    pub fn into_bufreader(mut self) -> BufReader<R> {
+        self.reset();
         self.inner
     }
 }
