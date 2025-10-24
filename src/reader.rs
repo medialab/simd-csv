@@ -196,6 +196,14 @@ impl<R: Read> Reader<R> {
         }
     }
 
+    pub fn get_ref(&self) -> &R {
+        self.buffer.get_ref()
+    }
+
+    pub fn get_mut(&mut self) -> &mut R {
+        self.buffer.get_mut()
+    }
+
     pub fn into_inner(self) -> R {
         self.buffer.into_inner()
     }
