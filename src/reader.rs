@@ -76,6 +76,7 @@ impl ReaderBuilder {
             headers: ByteRecord::new(),
             has_read: false,
             must_reemit_headers: !self.has_headers,
+            has_headers: self.has_headers,
         }
     }
 }
@@ -87,6 +88,7 @@ pub struct Reader<R> {
     headers: ByteRecord,
     has_read: bool,
     must_reemit_headers: bool,
+    has_headers: bool,
 }
 
 impl<R: Read> Reader<R> {
@@ -160,6 +162,11 @@ impl<R: Read> Reader<R> {
         self.has_read = true;
 
         Ok(())
+    }
+
+    #[inline]
+    pub fn has_headers(&self) -> bool {
+        self.has_headers
     }
 
     #[inline]
