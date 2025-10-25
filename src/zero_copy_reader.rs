@@ -65,7 +65,7 @@ impl ZeroCopyReaderBuilder {
     pub fn from_reader<R: Read>(&self, reader: R) -> ZeroCopyReader<R> {
         ZeroCopyReader {
             buffer: ScratchBuffer::with_optional_capacity(self.buffer_capacity, reader),
-            inner: CoreReader::new(self.delimiter, self.quote),
+            inner: CoreReader::new(self.delimiter, self.quote, None),
             byte_headers: ByteRecord::new(),
             raw_headers: (Vec::new(), Vec::new()),
             seps: Vec::new(),
@@ -164,7 +164,7 @@ impl<R: Read> ZeroCopyReader<R> {
                     self.buffer.consume(pos);
                     return Ok(None);
                 }
-                Cr | Lf => {
+                Skip => {
                     self.buffer.consume(pos);
                 }
                 InputEmpty => {
