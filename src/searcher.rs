@@ -93,7 +93,7 @@ mod x86_64 {
 
         const SSE2_STEP: usize = 16;
 
-        impl<'s, 'h> SSE2Indices<'s, 'h> {
+        impl SSE2Indices<'_, '_> {
             pub unsafe fn next(&mut self) -> Option<usize> {
                 if self.start >= self.end {
                     return None;
@@ -242,7 +242,7 @@ mod aarch64 {
 
     const SSE2_STEP: usize = 16;
 
-    impl<'s, 'h> NeonIndices<'s, 'h> {
+    impl NeonIndices<'_, '_> {
         pub unsafe fn next(&mut self) -> Option<usize> {
             if self.start >= self.end {
                 return None;
@@ -398,9 +398,9 @@ pub struct Indices<'s, 'h> {
     inner: memchr::arch::all::memchr::ThreeIter<'s, 'h>,
 }
 
-impl<'s, 'h> FusedIterator for Indices<'s, 'h> {}
+impl FusedIterator for Indices<'_, '_> {}
 
-impl<'s, 'h> Iterator for Indices<'s, 'h> {
+impl Iterator for Indices<'_, '_> {
     type Item = usize;
 
     #[inline(always)]

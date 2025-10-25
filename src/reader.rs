@@ -225,7 +225,7 @@ pub struct ByteRecordsIter<'r, R> {
     record: ByteRecord,
 }
 
-impl<'r, R: Read> Iterator for ByteRecordsIter<'r, R> {
+impl<R: Read> Iterator for ByteRecordsIter<'_, R> {
     type Item = error::Result<ByteRecord>;
 
     #[inline]

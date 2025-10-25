@@ -122,7 +122,7 @@ impl<'a> ZeroCopyByteRecord<'a> {
     }
 }
 
-impl<'a> fmt::Debug for ZeroCopyByteRecord<'a> {
+impl fmt::Debug for ZeroCopyByteRecord<'_> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(f, "ZeroCopyByteRecord(")?;
         f.debug_list()
@@ -138,7 +138,7 @@ pub struct ZeroCopyByteRecordIter<'a> {
     current: usize,
 }
 
-impl<'a> ExactSizeIterator for ZeroCopyByteRecordIter<'a> {}
+impl ExactSizeIterator for ZeroCopyByteRecordIter<'_> {}
 
 impl<'a> Iterator for ZeroCopyByteRecordIter<'a> {
     type Item = &'a [u8];
@@ -170,7 +170,7 @@ impl<'a> Iterator for ZeroCopyByteRecordIter<'a> {
     }
 }
 
-impl<'a> Index<usize> for ZeroCopyByteRecord<'a> {
+impl Index<usize> for ZeroCopyByteRecord<'_> {
     type Output = [u8];
 
     #[inline]
@@ -348,7 +348,7 @@ pub struct ByteRecordIter<'a> {
     current_reverse: usize,
 }
 
-impl<'a> ExactSizeIterator for ByteRecordIter<'a> {}
+impl ExactSizeIterator for ByteRecordIter<'_> {}
 
 impl<'a> Iterator for ByteRecordIter<'a> {
     type Item = &'a [u8];
@@ -382,7 +382,7 @@ impl<'a> Iterator for ByteRecordIter<'a> {
     }
 }
 
-impl<'a> DoubleEndedIterator for ByteRecordIter<'a> {
+impl DoubleEndedIterator for ByteRecordIter<'_> {
     #[inline]
     fn next_back(&mut self) -> Option<Self::Item> {
         if self.current_forward == self.current_reverse {

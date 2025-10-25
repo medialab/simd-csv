@@ -8,7 +8,7 @@
 /// N.B. This is copied nearly verbatim from regex-automata. Sigh.
 pub(crate) struct Bytes<'a>(pub(crate) &'a [u8]);
 
-impl<'a> core::fmt::Debug for Bytes<'a> {
+impl core::fmt::Debug for Bytes<'_> {
     fn fmt(&self, f: &mut core::fmt::Formatter) -> core::fmt::Result {
         write!(f, "\"")?;
         // This is a sad re-implementation of a similar impl found in bstr.

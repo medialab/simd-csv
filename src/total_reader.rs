@@ -188,7 +188,7 @@ pub struct ByteRecordsIter<'r, 'b> {
     record: ByteRecord,
 }
 
-impl<'r, 'b> Iterator for ByteRecordsIter<'r, 'b> {
+impl Iterator for ByteRecordsIter<'_, '_> {
     type Item = ByteRecord;
 
     #[inline]
