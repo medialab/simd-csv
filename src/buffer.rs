@@ -1,5 +1,56 @@
 use std::io::{BufRead, BufReader, Read, Result};
 
+pub struct BufReaderWithPosition<R> {
+    inner: BufReader<R>,
+    pos: u64,
+}
+
+impl<R: Read> BufReaderWithPosition<R> {
+    pub fn new(reader: R) -> Self {
+        Self {
+            inner: BufReader::new(reader),
+            pos: 0,
+        }
+    }
+
+    pub fn with_capacity(capacity: usize, reader: R) -> Self {
+        Self {
+            inner: BufReader::with_capacity(capacity, reader),
+            pos: 0,
+        }
+    }
+
+    #[inline(always)]
+    pub fn position(&self) -> u64 {
+        self.pos
+    }
+
+    #[inline(always)]
+    pub fn consume(&mut self, amt: usize) {
+        self.pos += amt as u64;
+        self.inner.consume(amt);
+    }
+
+    #[inline(always)]
+    pub fn fill_buf(&mut self) -> Result<&[u8]> {
+        self.inner.fill_buf()
+    }
+
+    #[inline(always)]
+    pub fn get_mut(&mut self) -> &mut R {
+        self.inner.get_mut()
+    }
+
+    #[inline(always)]
+    pub fn get_ref(&self) -> &R {
+        self.inner.get_ref()
+    }
+
+    pub fn into_inner(self) -> BufReader<R> {
+        self.inner
+    }
+}
+
 pub struct ScratchBuffer<R> {
     inner: BufReader<R>,
     scratch: Vec<u8>,

@@ -1,5 +1,6 @@
-use std::io::{BufRead, BufReader, Read};
+use std::io::{BufReader, Read};
 
+use crate::buffer::BufReaderWithPosition;
 use crate::core::{CoreReader, ReadResult};
 use crate::error::{self, Error};
 use crate::records::{ByteRecord, ByteRecordBuilder};
@@ -61,10 +62,10 @@ impl ReaderBuilder {
         self
     }
 
-    fn bufreader<R: Read>(&self, reader: R) -> BufReader<R> {
+    fn bufreader<R: Read>(&self, reader: R) -> BufReaderWithPosition<R> {
         match self.buffer_capacity {
-            None => BufReader::new(reader),
-            Some(capacity) => BufReader::with_capacity(capacity, reader),
+            None => BufReaderWithPosition::new(reader),
+            Some(capacity) => BufReaderWithPosition::with_capacity(capacity, reader),
         }
     }
 
@@ -82,7 +83,7 @@ impl ReaderBuilder {
 }
 
 pub struct Reader<R> {
-    buffer: BufReader<R>,
+    buffer: BufReaderWithPosition<R>,
     inner: CoreReader,
     flexible: bool,
     headers: ByteRecord,
@@ -212,11 +213,16 @@ impl<R: Read> Reader<R> {
     }
 
     pub fn into_inner(self) -> R {
-        self.buffer.into_inner()
+        self.buffer.into_inner().into_inner()
     }
 
     pub fn into_bufreader(self) -> BufReader<R> {
-        self.buffer
+        self.buffer.into_inner()
+    }
+
+    #[inline(always)]
+    pub fn position(&self) -> u64 {
+        self.buffer.position()
     }
 }
 
@@ -460,6 +466,28 @@ mod tests {
             records,
             vec![brec!["name", "surname"], brec!["john", "coucou"]]
         );
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_position() -> error::Result<()> {
+        let data = b"name,surname\njohnny,landis crue\nbabka,bob caterpillar\n";
+
+        let mut reader = Reader::from_reader(&data[..]);
+        let mut record = ByteRecord::new();
+
+        let mut positions = vec![reader.position()];
+
+        reader.byte_headers()?;
+
+        positions.push(reader.position());
+
+        while reader.read_byte_record(&mut record)? {
+            positions.push(reader.position());
+        }
+
+        assert_eq!(positions, vec![0, 13, 32, 54]);
 
         Ok(())
     }
