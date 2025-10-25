@@ -98,7 +98,7 @@ impl<R: Read> ZeroCopyReader<R> {
             return Ok(());
         }
 
-        let headers_len = self.raw_headers.0.len() + 1;
+        let headers_len = self.byte_headers.len();
 
         if self.has_read && written != headers_len {
             return Err(Error::unequal_lengths(headers_len, written));

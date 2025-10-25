@@ -99,15 +99,11 @@ impl<R: Read> Reader<R> {
 
     #[inline]
     fn check_field_count(&mut self, written: usize) -> error::Result<()> {
-        if self.flexible {
-            return Ok(());
+        if !self.flexible && self.has_read && written != self.headers.len() {
+            Err(Error::unequal_lengths(self.headers.len(), written))
+        } else {
+            Ok(())
         }
-
-        if self.has_read && written != self.headers.len() {
-            return Err(Error::unequal_lengths(self.headers.len(), written));
-        }
-
-        Ok(())
     }
 
     fn read_byte_record_impl(&mut self, record: &mut ByteRecord) -> error::Result<bool> {
