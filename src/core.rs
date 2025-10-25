@@ -317,27 +317,31 @@ impl CoreReader {
             return (ReadResult::End, 0);
         }
 
-        if self.record_was_read && (input[0] == b'\n' || input[0] == b'\r') {
-            return (ReadResult::Skip, 1);
+        if self.record_was_read {
+            let first_byte = input[0];
+
+            if first_byte == b'\n' || first_byte == b'\r' {
+                self.in_comment = false;
+                return (ReadResult::Skip, 1);
+            }
+
+            // Comments
+            if let Some(comment) = self.comment {
+                if self.in_comment || first_byte == comment {
+                    let offset = if let Some(o) = memchr(b'\n', &input[1..]) {
+                        self.in_comment = false;
+                        o + 1
+                    } else {
+                        self.in_comment = true;
+                        input_len
+                    };
+
+                    return (ReadResult::Skip, offset);
+                }
+            }
         }
 
         self.record_was_read = false;
-
-        // Comments
-        if let Some(comment) = self.comment {
-            if self.in_comment || input[0] == comment {
-                let offset = if let Some(o) = memchr(b'\n', input) {
-                    self.in_comment = false;
-                    self.record_was_read = true;
-                    o
-                } else {
-                    self.in_comment = true;
-                    input_len
-                };
-
-                return (ReadResult::Skip, offset);
-            }
-        }
 
         let mut pos: usize = 0;
 
