@@ -66,9 +66,8 @@ impl ZeroCopyReaderBuilder {
         ZeroCopyReader {
             buffer: ScratchBuffer::with_optional_capacity(self.buffer_capacity, reader),
             inner: CoreReader::new(self.delimiter, self.quote),
-            headers_seps: Vec::new(),
-            headers_slice: Vec::new(),
-            headers: ByteRecord::new(),
+            byte_headers: ByteRecord::new(),
+            raw_headers: (Vec::new(), Vec::new()),
             seps: Vec::new(),
             flexible: self.flexible,
             has_read: false,
@@ -80,9 +79,8 @@ impl ZeroCopyReaderBuilder {
 pub struct ZeroCopyReader<R> {
     buffer: ScratchBuffer<R>,
     inner: CoreReader,
-    headers: ByteRecord,
-    headers_seps: Vec<usize>,
-    headers_slice: Vec<u8>,
+    byte_headers: ByteRecord,
+    raw_headers: (Vec<usize>, Vec<u8>),
     seps: Vec<usize>,
     flexible: bool,
     has_read: bool,
@@ -100,7 +98,7 @@ impl<R: Read> ZeroCopyReader<R> {
             return Ok(());
         }
 
-        let headers_len = self.headers_seps.len() + 1;
+        let headers_len = self.raw_headers.0.len() + 1;
 
         if self.has_read && written != headers_len {
             return Err(Error::unequal_lengths(headers_len, written));
@@ -132,9 +130,8 @@ impl<R: Read> ZeroCopyReader<R> {
             self.must_reemit_headers = false;
         }
 
-        self.headers_seps = headers_seps;
-        self.headers_slice = headers_slice;
-        self.headers = byte_headers;
+        self.raw_headers = (headers_seps, headers_slice);
+        self.byte_headers = byte_headers;
 
         self.has_read = true;
 
@@ -145,7 +142,7 @@ impl<R: Read> ZeroCopyReader<R> {
     pub fn byte_headers(&mut self) -> error::Result<&ByteRecord> {
         self.on_first_read()?;
 
-        Ok(&self.headers)
+        Ok(&self.byte_headers)
     }
 
     fn read_byte_record_impl(&mut self) -> error::Result<Option<ZeroCopyByteRecord<'_>>> {
@@ -195,8 +192,8 @@ impl<R: Read> ZeroCopyReader<R> {
         if self.must_reemit_headers {
             self.must_reemit_headers = false;
             return Ok(Some(ZeroCopyByteRecord::new(
-                &self.headers_slice,
-                &self.headers_seps,
+                &self.raw_headers.1,
+                &self.raw_headers.0,
                 self.inner.quote,
             )));
         }
