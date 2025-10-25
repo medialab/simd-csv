@@ -50,7 +50,7 @@ impl SplitterBuilder {
     pub fn from_reader<R: Read>(&self, reader: R) -> Splitter<R> {
         Splitter {
             buffer: ScratchBuffer::with_optional_capacity(self.buffer_capacity, reader),
-            inner: CoreReader::new(self.delimiter, self.quote, None),
+            inner: CoreReader::new(self.delimiter, self.quote),
             has_read: false,
         }
     }

@@ -23,23 +23,19 @@ enum ReadState {
 pub(crate) struct CoreReader {
     pub(crate) delimiter: u8,
     pub(crate) quote: u8,
-    pub(crate) comment: Option<u8>,
     state: ReadState,
     record_was_read: bool,
-    in_comment: bool,
     searcher: Searcher,
 }
 
 impl CoreReader {
-    pub(crate) fn new(delimiter: u8, quote: u8, comment: Option<u8>) -> Self {
+    pub(crate) fn new(delimiter: u8, quote: u8) -> Self {
         Self {
             delimiter,
             quote,
-            comment,
             state: ReadState::Unquoted,
             // Must be true at the beginning to avoid counting one record for empty input
             record_was_read: true,
-            in_comment: false,
             searcher: Searcher::new(delimiter, b'\n', quote),
         }
     }
@@ -306,7 +302,7 @@ impl CoreReader {
         let input_len = input.len();
 
         if input_len == 0 {
-            if !self.record_was_read && !self.in_comment {
+            if !self.record_was_read {
                 self.record_was_read = true;
 
                 // NOTE: this is required to handle streams not ending with a newline
@@ -322,22 +318,6 @@ impl CoreReader {
         }
 
         self.record_was_read = false;
-
-        // Comments
-        if let Some(comment) = self.comment {
-            if self.in_comment || input[0] == comment {
-                let offset = if let Some(o) = memchr(b'\n', input) {
-                    self.in_comment = false;
-                    self.record_was_read = true;
-                    o
-                } else {
-                    self.in_comment = true;
-                    input_len
-                };
-
-                return (ReadResult::Skip, offset);
-            }
-        }
 
         let mut pos: usize = 0;
 

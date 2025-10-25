@@ -9,7 +9,6 @@ use crate::utils::trim_bom;
 pub struct ReaderBuilder {
     delimiter: u8,
     quote: u8,
-    comment: Option<u8>,
     buffer_capacity: Option<usize>,
     flexible: bool,
     has_headers: bool,
@@ -20,7 +19,6 @@ impl Default for ReaderBuilder {
         Self {
             delimiter: b',',
             quote: b'"',
-            comment: None,
             buffer_capacity: None,
             flexible: false,
             has_headers: true,
@@ -49,11 +47,6 @@ impl ReaderBuilder {
         self
     }
 
-    pub fn comment(&mut self, comment: Option<u8>) -> &mut Self {
-        self.comment = comment;
-        self
-    }
-
     pub fn buffer_capacity(&mut self, capacity: usize) -> &mut Self {
         self.buffer_capacity = Some(capacity);
         self
@@ -79,7 +72,7 @@ impl ReaderBuilder {
     pub fn from_reader<R: Read>(&self, reader: R) -> Reader<R> {
         Reader {
             buffer: self.bufreader(reader),
-            inner: CoreReader::new(self.delimiter, self.quote, self.comment),
+            inner: CoreReader::new(self.delimiter, self.quote),
             flexible: self.flexible,
             headers: ByteRecord::new(),
             has_read: false,
@@ -289,7 +282,7 @@ mod tests {
 
     #[test]
     fn test_read_byte_record() -> error::Result<()> {
-        let csv = "#comment\nname,surname,age\n#yeah\n\"john\",\"landy, the \"\"everlasting\"\" bastard\",45\n\n#this is a very useless comment lol\n\n\n\"\"\"ok\"\"\",whatever,dude\nlucy,rose,\"67\"\njermaine,jackson,\"89\"\n\nkarine,loucan,\"52\"\nrose,\"glib\",12\n\"guillaume\",\"plique\",\"42\"\r\n";
+        let csv = "name,surname,age\n\"john\",\"landy, the \"\"everlasting\"\" bastard\",45\n\n\n\n\n\"\"\"ok\"\"\",whatever,dude\nlucy,rose,\"67\"\njermaine,jackson,\"89\"\n\nkarine,loucan,\"52\"\nrose,\"glib\",12\n\"guillaume\",\"plique\",\"42\"\r\n";
 
         let expected = vec![
             brec!["name", "surname", "age"],
@@ -305,7 +298,6 @@ mod tests {
         for capacity in [32usize, 4, 3, 2, 1] {
             let mut reader = ReaderBuilder::with_capacity(capacity)
                 .has_headers(false)
-                .comment(Some(b'#'))
                 .from_reader(Cursor::new(csv));
 
             assert_eq!(

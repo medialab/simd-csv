@@ -40,7 +40,7 @@ impl TotalReaderBuilder {
 
     pub fn from_bytes<'b>(&self, bytes: &'b [u8]) -> TotalReader<'b> {
         TotalReader {
-            inner: CoreReader::new(self.delimiter, self.quote, None),
+            inner: CoreReader::new(self.delimiter, self.quote),
             bytes,
             pos: 0,
             headers: ByteRecord::new(),
