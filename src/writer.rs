@@ -1,4 +1,4 @@
-use std::io::{BufWriter, IntoInnerError, Write};
+use std::io::{self, BufWriter, IntoInnerError, Write};
 
 use memchr::{memchr, memchr3};
 
@@ -86,10 +86,8 @@ impl<W: Write> Writer<W> {
     }
 
     #[inline(always)]
-    pub fn flush(&mut self) -> error::Result<()> {
-        self.buffer.flush()?;
-
-        Ok(())
+    pub fn flush(&mut self) -> io::Result<()> {
+        self.buffer.flush()
     }
 
     #[inline]
