@@ -78,6 +78,11 @@ impl<R: Read> LineReader<R> {
             };
         }
     }
+
+    #[inline(always)]
+    pub fn position(&self) -> u64 {
+        self.inner.position()
+    }
 }
 
 #[cfg(test)]

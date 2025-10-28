@@ -181,6 +181,11 @@ impl<'b> TotalReader<'b> {
             record: ByteRecord::new(),
         }
     }
+
+    #[inline(always)]
+    pub fn position(&self) -> u64 {
+        self.pos as u64
+    }
 }
 
 pub struct ByteRecordsIter<'r, 'b> {

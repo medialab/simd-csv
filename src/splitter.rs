@@ -140,6 +140,11 @@ impl<R: Read> Splitter<R> {
     pub fn into_bufreader(self) -> BufReader<R> {
         self.buffer.into_bufreader()
     }
+
+    #[inline(always)]
+    pub fn position(&self) -> u64 {
+        self.buffer.position()
+    }
 }
 
 #[cfg(test)]

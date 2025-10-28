@@ -46,13 +46,18 @@ impl<R: Read> BufReaderWithPosition<R> {
         self.inner.get_ref()
     }
 
+    #[inline(always)]
+    pub fn buffer(&self) -> &[u8] {
+        self.inner.buffer()
+    }
+
     pub fn into_inner(self) -> BufReader<R> {
         self.inner
     }
 }
 
 pub struct ScratchBuffer<R> {
-    inner: BufReader<R>,
+    inner: BufReaderWithPosition<R>,
     scratch: Vec<u8>,
     next_consume: Option<usize>,
 }
@@ -60,7 +65,7 @@ pub struct ScratchBuffer<R> {
 impl<R: Read> ScratchBuffer<R> {
     pub fn new(reader: R) -> Self {
         Self {
-            inner: BufReader::new(reader),
+            inner: BufReaderWithPosition::new(reader),
             scratch: Vec::new(),
             next_consume: None,
         }
@@ -68,7 +73,7 @@ impl<R: Read> ScratchBuffer<R> {
 
     pub fn with_capacity(capacity: usize, reader: R) -> Self {
         Self {
-            inner: BufReader::with_capacity(capacity, reader),
+            inner: BufReaderWithPosition::with_capacity(capacity, reader),
             scratch: Vec::with_capacity(capacity),
             next_consume: None,
         }
@@ -134,8 +139,14 @@ impl<R: Read> ScratchBuffer<R> {
         }
     }
 
+    #[inline(always)]
+    pub fn position(&self) -> u64 {
+        let offset = self.next_consume.unwrap_or(0) as u64;
+        self.inner.position() + offset
+    }
+
     pub fn into_bufreader(mut self) -> BufReader<R> {
         self.reset();
-        self.inner
+        self.inner.into_inner()
     }
 }
