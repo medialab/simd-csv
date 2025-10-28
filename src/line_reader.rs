@@ -1,6 +1,6 @@
 use memchr::memchr;
 
-use std::io::{self, Read};
+use std::io::{self, BufReader, Read};
 
 use crate::buffer::ScratchBuffer;
 use crate::utils::trim_trailing_crlf;
@@ -82,6 +82,16 @@ impl<R: Read> LineReader<R> {
     #[inline(always)]
     pub fn position(&self) -> u64 {
         self.inner.position()
+    }
+
+    #[inline(always)]
+    pub fn into_bufreader(self) -> BufReader<R> {
+        self.inner.into_bufreader()
+    }
+
+    #[inline(always)]
+    pub fn into_inner(self) -> R {
+        self.inner.into_bufreader().into_inner()
     }
 }
 
