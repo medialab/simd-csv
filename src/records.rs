@@ -428,13 +428,11 @@ impl<'r> ByteRecordBuilder<'r> {
 
     #[inline]
     pub(crate) fn finalize_record(&mut self) {
-        let start = self.start;
-        self.start = self.record.data.len();
+        if let Some(b'\r') = self.record.data.last() {
+            self.record.data.pop();
+        }
 
-        let mut end = self.start;
-        end -= (self.start > 0 && self.record.data[self.start - 1] == b'\r') as usize;
-
-        self.record.bounds.push((start, end));
+        self.finalize_field();
     }
 
     #[inline]
@@ -510,5 +508,19 @@ mod tests {
         assert_eq!(record.get(1), Some::<&[u8]>(b"surname"));
         assert_eq!(record.get(2), Some::<&[u8]>(b"age"));
         assert_eq!(record.get(3), None);
+    }
+
+    #[test]
+    fn test_mutate_record_after_read() {
+        let mut record = ByteRecord::new();
+        let mut builder = ByteRecordBuilder::wrap(&mut record);
+        builder.extend_from_slice(b"test\r");
+        builder.finalize_record();
+
+        assert_eq!(record.iter().collect::<Vec<_>>(), vec![b"test"]);
+
+        record.push_field(b"next");
+
+        assert_eq!(record.iter().collect::<Vec<_>>(), vec![b"test", b"next"]);
     }
 }
