@@ -1,6 +1,6 @@
 use std::io::{self, BufWriter, IntoInnerError, Write};
 
-use memchr::{memchr, memchr3};
+use memchr::memchr;
 
 use crate::error::{self, Error};
 use crate::records::ByteRecord;
@@ -62,12 +62,19 @@ impl WriterBuilder {
     }
 
     pub fn from_writer<W: Write>(&self, writer: W) -> Writer<W> {
+        let mut must_quote = [false; 256];
+        must_quote[b'\r' as usize] = true;
+        must_quote[b'\n' as usize] = true;
+        must_quote[self.delimiter as usize] = true;
+        must_quote[self.quote as usize] = true;
+
         Writer {
             delimiter: self.delimiter,
             quote: self.quote,
             buffer: self.bufwriter(writer),
             flexible: self.flexible,
             field_count: None,
+            must_quote,
         }
     }
 }
@@ -78,6 +85,7 @@ pub struct Writer<W: Write> {
     buffer: BufWriter<W>,
     flexible: bool,
     field_count: Option<usize>,
+    must_quote: [bool; 256],
 }
 
 impl<W: Write> Writer<W> {
@@ -154,14 +162,21 @@ impl<W: Write> Writer<W> {
     }
 
     #[inline]
-    fn should_quote(&self, cell: &[u8]) -> bool {
-        if cell.len() < 8 {
-            cell.iter()
-                .copied()
-                .any(|b| b == self.quote || b == self.delimiter || b == b'\n')
-        } else {
-            memchr3(self.quote, self.delimiter, b'\n', cell).is_some()
+    fn should_quote(&self, mut cell: &[u8]) -> bool {
+        // This strategy comes directly from `rust-csv`
+        let mut yes = false;
+        while !yes && cell.len() >= 8 {
+            yes = self.must_quote[cell[0] as usize]
+                || self.must_quote[cell[1] as usize]
+                || self.must_quote[cell[2] as usize]
+                || self.must_quote[cell[3] as usize]
+                || self.must_quote[cell[4] as usize]
+                || self.must_quote[cell[5] as usize]
+                || self.must_quote[cell[6] as usize]
+                || self.must_quote[cell[7] as usize];
+            cell = &cell[8..];
         }
+        yes || cell.iter().any(|&b| self.must_quote[b as usize])
     }
 
     fn write_quoted_cell(&mut self, cell: &[u8]) -> error::Result<()> {
@@ -296,5 +311,20 @@ mod tests {
         assert_eq!(write(&brec!["", "", ""]), ",,\n");
         assert_eq!(write(&brec!["name", "", "age"]), "name,,age\n");
         assert_eq!(write(&brec!["name", ""]), "name,\n");
+    }
+
+    #[test]
+    fn should_quote() {
+        let writer = Writer::from_writer(Cursor::new(Vec::<u8>::new()));
+
+        assert_eq!(writer.should_quote(b"test"), false);
+        assert_eq!(writer.should_quote(b"test,"), true);
+        assert_eq!(writer.should_quote(b"te\"st"), true);
+        assert_eq!(writer.should_quote(b"te\nst"), true);
+        assert_eq!(
+            writer.should_quote(b"testtesttesttesttesttesttesttest\n"),
+            true
+        );
+        assert_eq!(writer.should_quote(b"te\rst"), true);
     }
 }
