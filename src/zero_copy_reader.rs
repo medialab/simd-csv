@@ -95,7 +95,7 @@ impl<R: Read> ZeroCopyReader<R> {
     }
 
     #[inline]
-    fn check_field_count(&mut self, written: usize) -> error::Result<()> {
+    fn check_field_count(&mut self, byte: u64, written: usize) -> error::Result<()> {
         if self.flexible {
             return Ok(());
         }
@@ -106,7 +106,7 @@ impl<R: Read> ZeroCopyReader<R> {
             return Err(Error::new(ErrorKind::UnequalLengths {
                 expected_len: headers_len,
                 len: written,
-                pos: Some((self.position(), self.index)),
+                pos: Some((byte, self.index)),
             }));
         }
 
@@ -157,6 +157,8 @@ impl<R: Read> ZeroCopyReader<R> {
         self.buffer.reset();
         self.seps.clear();
 
+        let byte = self.position();
+
         loop {
             let seps_offset = self.buffer.saved().len();
             let input = self.buffer.fill_buf()?;
@@ -177,7 +179,8 @@ impl<R: Read> ZeroCopyReader<R> {
                     self.buffer.save();
                 }
                 Record => {
-                    self.check_field_count(self.seps.len() + 1)?;
+                    self.index += 1;
+                    self.check_field_count(byte, self.seps.len() + 1)?;
 
                     let record = ZeroCopyByteRecord::new(
                         self.buffer.flush(pos),

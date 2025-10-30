@@ -100,7 +100,7 @@ impl<R: Read> Reader<R> {
     }
 
     #[inline]
-    fn check_field_count(&mut self, written: usize) -> error::Result<()> {
+    fn check_field_count(&mut self, byte: u64, written: usize) -> error::Result<()> {
         if self.flexible {
             return Ok(());
         }
@@ -109,7 +109,11 @@ impl<R: Read> Reader<R> {
             return Err(Error::new(ErrorKind::UnequalLengths {
                 expected_len: self.headers.len(),
                 len: written,
-                pos: Some((self.position(), self.index)),
+                pos: Some((
+                    byte,
+                    self.index
+                        .saturating_sub(if self.has_headers { 1 } else { 0 }),
+                )),
             }));
         }
 
@@ -122,6 +126,7 @@ impl<R: Read> Reader<R> {
         record.clear();
 
         let mut record_builder = ByteRecordBuilder::wrap(record);
+        let byte = self.position();
 
         loop {
             let input = self.buffer.fill_buf()?;
@@ -139,7 +144,7 @@ impl<R: Read> Reader<R> {
                 }
                 Record => {
                     self.index += 1;
-                    self.check_field_count(record.len())?;
+                    self.check_field_count(byte, record.len())?;
                     return Ok(true);
                 }
             };
