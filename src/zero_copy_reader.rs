@@ -2,7 +2,7 @@ use std::io::{BufReader, Read};
 
 use crate::buffer::ScratchBuffer;
 use crate::core::{CoreReader, ReadResult};
-use crate::error::{self, Error};
+use crate::error::{self, Error, ErrorKind};
 use crate::records::{ByteRecord, ZeroCopyByteRecord};
 use crate::utils::trim_bom;
 
@@ -72,6 +72,7 @@ impl ZeroCopyReaderBuilder {
             flexible: self.flexible,
             has_read: false,
             must_reemit_headers: !self.has_headers,
+            index: 0,
         }
     }
 }
@@ -85,6 +86,7 @@ pub struct ZeroCopyReader<R> {
     flexible: bool,
     has_read: bool,
     must_reemit_headers: bool,
+    index: u64,
 }
 
 impl<R: Read> ZeroCopyReader<R> {
@@ -101,7 +103,11 @@ impl<R: Read> ZeroCopyReader<R> {
         let headers_len = self.raw_headers.0.len() + 1;
 
         if self.has_read && written != headers_len {
-            return Err(Error::unequal_lengths(headers_len, written));
+            return Err(Error::new(ErrorKind::UnequalLengths {
+                expected_len: headers_len,
+                len: written,
+                pos: Some((self.position(), self.index)),
+            }));
         }
 
         Ok(())

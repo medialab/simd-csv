@@ -2,7 +2,7 @@ use std::io::{self, BufWriter, IntoInnerError, Write};
 
 use memchr::memchr;
 
-use crate::error::{self, Error};
+use crate::error::{self, Error, ErrorKind};
 use crate::records::ByteRecord;
 
 pub struct WriterBuilder {
@@ -107,7 +107,11 @@ impl<W: Write> Writer<W> {
         match self.field_count {
             Some(expected) => {
                 if written != expected {
-                    return Err(Error::unequal_lengths(expected, written));
+                    return Err(Error::new(ErrorKind::UnequalLengths {
+                        expected_len: expected,
+                        len: written,
+                        pos: None,
+                    }));
                 }
             }
             None => {

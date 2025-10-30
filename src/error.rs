@@ -3,15 +3,19 @@ use std::{error, fmt, io, result};
 #[derive(Debug)]
 pub enum ErrorKind {
     Io(io::Error),
-    UnequalLengths { expected_len: usize, len: usize },
+    UnequalLengths {
+        expected_len: usize,
+        len: usize,
+        pos: Option<(u64, u64)>,
+    },
 }
 
 #[derive(Debug)]
 pub struct Error(ErrorKind);
 
 impl Error {
-    pub(crate) fn unequal_lengths(expected_len: usize, len: usize) -> Self {
-        Self(ErrorKind::UnequalLengths { expected_len, len })
+    pub fn new(kind: ErrorKind) -> Self {
+        Self(kind)
     }
 
     pub fn is_io_error(&self) -> bool {
@@ -45,7 +49,20 @@ impl fmt::Display for Error {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self.0 {
             ErrorKind::Io(ref err) => err.fmt(f),
-            ErrorKind::UnequalLengths { expected_len, len } => write!(
+            ErrorKind::UnequalLengths {
+                expected_len,
+                len,
+                pos: Some((byte, index))
+            } => write!(
+                f,
+                "CSV error: record {} (byte: {}): found record with {} fields, but the previous record has {} fields",
+                index, byte, len, expected_len
+            ),
+             ErrorKind::UnequalLengths {
+                expected_len,
+                len,
+                pos: None
+            } => write!(
                 f,
                 "CSV error: found record with {} fields, but the previous record has {} fields",
                 len, expected_len

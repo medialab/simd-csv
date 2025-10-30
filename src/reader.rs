@@ -2,7 +2,7 @@ use std::io::{BufReader, Read};
 
 use crate::buffer::BufReaderWithPosition;
 use crate::core::{CoreReader, ReadResult};
-use crate::error::{self, Error};
+use crate::error::{self, Error, ErrorKind};
 use crate::records::{ByteRecord, ByteRecordBuilder};
 use crate::utils::trim_bom;
 
@@ -78,6 +78,7 @@ impl ReaderBuilder {
             has_read: false,
             must_reemit_headers: !self.has_headers,
             has_headers: self.has_headers,
+            index: 0,
         }
     }
 }
@@ -90,6 +91,7 @@ pub struct Reader<R> {
     has_read: bool,
     must_reemit_headers: bool,
     has_headers: bool,
+    index: u64,
 }
 
 impl<R: Read> Reader<R> {
@@ -104,7 +106,11 @@ impl<R: Read> Reader<R> {
         }
 
         if self.has_read && written != self.headers.len() {
-            return Err(Error::unequal_lengths(self.headers.len(), written));
+            return Err(Error::new(ErrorKind::UnequalLengths {
+                expected_len: self.headers.len(),
+                len: written,
+                pos: Some((self.position(), self.index)),
+            }));
         }
 
         Ok(())
@@ -132,6 +138,7 @@ impl<R: Read> Reader<R> {
                     continue;
                 }
                 Record => {
+                    self.index += 1;
                     self.check_field_count(record.len())?;
                     return Ok(true);
                 }
