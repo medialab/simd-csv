@@ -13,7 +13,7 @@ mod utils;
 mod writer;
 mod zero_copy_reader;
 
-pub use error::{Error, ErrorKind};
+pub use error::{Error, ErrorKind, Result};
 pub use line_reader::LineReader;
 pub use reader::{Reader, ReaderBuilder};
 pub use records::{ByteRecord, ZeroCopyByteRecord};
