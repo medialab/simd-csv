@@ -10,6 +10,10 @@ struct Args {
     /// Print sample
     #[arg(long)]
     sample: bool,
+
+    /// Seek with offset
+    #[arg(long)]
+    offset: Option<u64>,
 }
 
 impl Args {
@@ -27,13 +31,15 @@ fn main() -> anyhow::Result<()> {
     let delimiter = args.delimiter();
     let file = File::open(&args.path)?;
 
-    let seeker = simd_csv::SeekerBuilder::new()
+    let mut seeker = simd_csv::SeekerBuilder::new()
         .delimiter(delimiter)
         .from_reader(file)?
         .unwrap();
 
     if args.sample {
         dbg!(seeker.sample());
+    } else if let Some(offset) = args.offset {
+        dbg!(seeker.seek(offset)?);
     }
 
     Ok(())

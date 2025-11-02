@@ -1,8 +1,8 @@
-use std::io::{Read, Seek, SeekFrom};
+use std::io::{Cursor, Read, Seek, SeekFrom};
 
 use crate::error;
 use crate::records::ByteRecord;
-use crate::zero_copy_reader::ZeroCopyReaderBuilder;
+use crate::zero_copy_reader::{ZeroCopyReader, ZeroCopyReaderBuilder};
 
 #[derive(Debug)]
 pub struct SeekerSample {
@@ -76,12 +76,27 @@ impl SeekerSample {
     }
 }
 
+fn cosine(profile: &[f64], other: impl Iterator<Item = usize>) -> f64 {
+    let mut self_norm = 0.0;
+    let mut other_norm = 0.0;
+    let mut intersection = 0.0;
+
+    for (a, b) in profile.iter().copied().zip(other.map(|i| i as f64)) {
+        self_norm += a * a;
+        other_norm += b * b;
+        intersection += a * b;
+    }
+
+    intersection / (self_norm * other_norm).sqrt()
+}
+
 pub struct SeekerBuilder {
     delimiter: u8,
     quote: u8,
     has_headers: bool,
     buffer_capacity: Option<usize>,
     sample_size: u64,
+    lookahead_factor: u64,
 }
 
 impl Default for SeekerBuilder {
@@ -92,6 +107,7 @@ impl Default for SeekerBuilder {
             buffer_capacity: None,
             has_headers: true,
             sample_size: 128,
+            lookahead_factor: 32,
         }
     }
 }
@@ -127,6 +143,11 @@ impl SeekerBuilder {
         self
     }
 
+    pub fn lookahead_factor(&mut self, factor: u64) -> &mut Self {
+        self.lookahead_factor = factor;
+        self
+    }
+
     pub fn has_headers(&mut self, yes: bool) -> &mut Self {
         self.has_headers = yes;
         self
@@ -145,26 +166,124 @@ impl SeekerBuilder {
             .has_headers(self.has_headers);
 
         match SeekerSample::from_reader(&mut reader, &builder, self.sample_size) {
-            Ok(Some(sample)) => Ok(Some(Seeker {
-                inner: reader,
-                sample,
-                _builder: builder,
-            })),
+            Ok(Some(sample)) => {
+                builder.has_headers(false).flexible(true);
+
+                Ok(Some(Seeker {
+                    inner: reader,
+                    lookahead_factor: self.lookahead_factor,
+                    scratch: Vec::with_capacity(
+                        (self.lookahead_factor * sample.max_record_size) as usize,
+                    ),
+                    sample,
+                    builder,
+                }))
+            }
             Ok(None) => Ok(None),
             Err(err) => Err(err),
         }
     }
 }
 
+fn lookahead<R: Read>(
+    reader: &mut ZeroCopyReader<R>,
+    expected_field_count: usize,
+) -> error::Result<Option<(u64, ByteRecord)>> {
+    let mut i: usize = 0;
+    let mut next_record: Option<(u64, ByteRecord)> = None;
+    let mut field_counts: Vec<usize> = Vec::new();
+    let mut pos: u64 = 0;
+
+    while let Some(record) = reader.read_byte_record()? {
+        if i > 0 {
+            field_counts.push(record.len());
+
+            if i == 1 {
+                next_record = Some((pos, record.to_byte_record()));
+            }
+        }
+
+        pos = reader.position();
+        i += 1;
+    }
+
+    // NOTE: if we have less than 2 records beyond the first one, it will be hard to
+    // make a correct decision
+    // NOTE: last record might be unaligned since we artificially clamp the read buffer
+    if field_counts.len() < 2
+        || field_counts[..field_counts.len() - 1]
+            .iter()
+            .any(|l| *l != expected_field_count)
+    {
+        Ok(None)
+    } else {
+        Ok(next_record)
+    }
+}
+
 pub struct Seeker<R> {
     inner: R,
     sample: SeekerSample,
-    _builder: ZeroCopyReaderBuilder,
+    lookahead_factor: u64,
+    scratch: Vec<u8>,
+    builder: ZeroCopyReaderBuilder,
 }
 
-impl<R> Seeker<R> {
+impl<R: Read + Seek> Seeker<R> {
     pub fn sample(&self) -> &SeekerSample {
         &self.sample
+    }
+
+    pub fn seek(&mut self, from_pos: u64) -> error::Result<Option<(u64, ByteRecord)>> {
+        // TODO: prevent oob
+        // TODO: special case when first record
+        // TODO: deal with last chunk of the file
+        self.inner.seek(SeekFrom::Start(from_pos))?;
+        (&mut self.inner)
+            .take(self.lookahead_factor * self.sample.max_record_size)
+            .read_to_end(&mut self.scratch)?;
+
+        let mut unquoted_reader = self.builder.from_reader(self.scratch.as_slice());
+        let mut quoted_reader = self
+            .builder
+            .from_reader(Cursor::new(b"\"").chain(self.scratch.as_slice()));
+
+        let expected_field_count = self.sample.headers.len();
+
+        let unquoted = lookahead(&mut unquoted_reader, expected_field_count)?;
+        let quoted = lookahead(&mut quoted_reader, expected_field_count)?;
+
+        match (unquoted, quoted) {
+            (None, None) => Ok(None),
+            (Some((pos, record)), None) => Ok(Some((from_pos + pos, record))),
+            (None, Some((pos, record))) => Ok(Some((from_pos + pos - 1, record))),
+            (Some((unquoted_pos, unquoted_record)), Some((mut quoted_pos, quoted_record))) => {
+                // Sometimes we might fall within a cell whose contents suspiciously yield
+                // the same record structure. In this case we rely on cosine similarity over
+                // record profiles to make sure we select the correct offset.
+                quoted_pos -= 1;
+
+                // A tie in offset pos means we are unquoted
+                if unquoted_pos == quoted_pos {
+                    Ok(Some((from_pos + unquoted_pos, unquoted_record)))
+                } else {
+                    let unquoted_cosine = cosine(
+                        &self.sample.fields_mean_sizes,
+                        unquoted_record.iter().map(|cell| cell.len()),
+                    );
+                    let quoted_cosine = cosine(
+                        &self.sample.fields_mean_sizes,
+                        quoted_record.iter().map(|cell| cell.len()),
+                    );
+
+                    if unquoted_cosine > quoted_cosine {
+                        Ok(Some((from_pos + unquoted_pos, unquoted_record)))
+                    } else {
+                        Ok(Some((from_pos + quoted_pos, quoted_record)))
+                    }
+                }
+            }
+        }
     }
 
     pub fn into_inner(self) -> R {

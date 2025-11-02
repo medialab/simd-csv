@@ -6,6 +6,7 @@ use crate::error::{self, Error, ErrorKind};
 use crate::records::{ByteRecord, ZeroCopyByteRecord};
 use crate::utils::trim_bom;
 
+#[derive(Clone)]
 pub struct ZeroCopyReaderBuilder {
     delimiter: u8,
     quote: u8,
