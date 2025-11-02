@@ -170,6 +170,7 @@ impl SeekerBuilder {
                 builder.has_headers(false).flexible(true);
 
                 Ok(Some(Seeker {
+                    has_headers: self.has_headers,
                     inner: reader,
                     lookahead_factor: self.lookahead_factor,
                     scratch: Vec::with_capacity(
@@ -226,12 +227,27 @@ pub struct Seeker<R> {
     sample: SeekerSample,
     lookahead_factor: u64,
     scratch: Vec<u8>,
+    has_headers: bool,
     builder: ZeroCopyReaderBuilder,
 }
 
 impl<R: Read + Seek> Seeker<R> {
     pub fn sample(&self) -> &SeekerSample {
         &self.sample
+    }
+
+    #[inline(always)]
+    pub fn approx_count(&self) -> u64 {
+        let sample = &self.sample;
+
+        if sample.has_reached_eof {
+            sample.record_count
+        } else {
+            let estimation =
+                (sample.file_len as f64 / sample.median_record_size as f64).ceil() as u64;
+
+            estimation.saturating_sub(if self.has_headers { 1 } else { 0 })
+        }
     }
 
     pub fn seek(&mut self, from_pos: u64) -> error::Result<Option<(u64, ByteRecord)>> {

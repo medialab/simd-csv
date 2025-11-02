@@ -14,6 +14,10 @@ struct Args {
     /// Seek with offset
     #[arg(long)]
     offset: Option<u64>,
+
+    /// Approx count
+    #[arg(long)]
+    approx_count: bool,
 }
 
 impl Args {
@@ -40,6 +44,8 @@ fn main() -> anyhow::Result<()> {
         dbg!(seeker.sample());
     } else if let Some(offset) = args.offset {
         dbg!(seeker.seek(offset)?);
+    } else if args.approx_count {
+        println!("{}", seeker.approx_count());
     }
 
     Ok(())
