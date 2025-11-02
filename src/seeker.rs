@@ -9,7 +9,7 @@ pub struct SeekerSample {
     headers: ByteRecord,
     record_count: u64,
     max_record_size: u64,
-    mean_record_size: f64,
+    median_record_size: u64,
     first_record_start_pos: u64,
     fields_mean_sizes: Vec<f64>,
     file_len: u64,
@@ -31,20 +31,14 @@ impl SeekerSample {
         let first_record_start_pos = initial_pos + csv_reader.position();
 
         let mut i: u64 = 0;
-        let mut max_record_size: u64 = 0;
-        let mut record_size_sum: u64 = 0;
+        let mut record_sizes: Vec<u64> = Vec::new();
         let mut fields_sizes: Vec<Vec<usize>> = Vec::with_capacity(sample_size as usize);
 
         while i < sample_size {
             if let Some(record) = csv_reader.read_byte_record()? {
                 let record_size = record.as_slice().len() as u64 + 1;
 
-                if record_size > max_record_size {
-                    max_record_size = record_size;
-                }
-
-                record_size_sum += record_size;
-
+                record_sizes.push(record_size);
                 fields_sizes.push(record.iter().map(|cell| cell.len()).collect());
 
                 i += 1;
@@ -67,11 +61,13 @@ impl SeekerSample {
             })
             .collect();
 
+        record_sizes.sort();
+
         Ok(Some(Self {
             headers,
             record_count: i,
-            max_record_size,
-            mean_record_size: record_size_sum as f64 / i as f64,
+            max_record_size: *record_sizes.last().unwrap(),
+            median_record_size: record_sizes[record_sizes.len() / 2],
             first_record_start_pos,
             fields_mean_sizes,
             has_reached_eof,
