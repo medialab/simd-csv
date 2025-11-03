@@ -275,7 +275,6 @@ impl<R: Read + Seek> Seeker<R> {
             }));
         }
 
-        // TODO: deal with last chunk of the file
         self.inner.seek(SeekFrom::Start(from_pos))?;
 
         // NOTE: first record does not need to be more complex
