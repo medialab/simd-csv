@@ -8,6 +8,11 @@ pub enum ErrorKind {
         len: usize,
         pos: Option<(u64, u64)>,
     },
+    OutOfBounds {
+        pos: u64,
+        start: u64,
+        end: u64,
+    },
 }
 
 #[derive(Debug)]
@@ -67,6 +72,9 @@ impl fmt::Display for Error {
                 "CSV error: found record with {} fields, but the previous record has {} fields",
                 len, expected_len
             ),
+            ErrorKind::OutOfBounds { pos, start, end } => {
+                write!(f, "pos {} is out of bounds (should be >= {} and < {})", pos, start, end)
+            }
         }
     }
 }

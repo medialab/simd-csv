@@ -7,10 +7,6 @@ struct Args {
     /// Path to target CSV file
     path: String,
 
-    /// Print sample
-    #[arg(long)]
-    sample: bool,
-
     /// Seek with offset
     #[arg(long)]
     offset: Option<u64>,
@@ -49,9 +45,7 @@ fn main() -> anyhow::Result<()> {
         .from_reader(file)?
         .unwrap();
 
-    if args.sample {
-        dbg!(seeker.sample());
-    } else if let Some(offset) = args.offset {
+    if let Some(offset) = args.offset {
         dbg!(seeker.seek(offset)?);
     } else if args.approx_count {
         println!("{}", seeker.approx_count());

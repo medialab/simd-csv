@@ -1,24 +1,24 @@
 use std::io::{Cursor, Read, Seek, SeekFrom};
 
-use crate::error;
+use crate::error::{self, Error, ErrorKind};
 use crate::records::ByteRecord;
 use crate::utils::ReverseReader;
 use crate::zero_copy_reader::{ZeroCopyReader, ZeroCopyReaderBuilder};
 
 #[derive(Debug)]
-pub struct SeekerSample {
+struct SeekerSample {
     headers: ByteRecord,
     record_count: u64,
     max_record_size: u64,
     median_record_size: u64,
-    first_record_start_pos: u64,
+    first_record_pos: u64,
     fields_mean_sizes: Vec<f64>,
     file_len: u64,
     has_reached_eof: bool,
 }
 
 impl SeekerSample {
-    pub fn from_reader<R: Read + Seek>(
+    fn from_reader<R: Read + Seek>(
         mut reader: R,
         csv_reader_builder: &ZeroCopyReaderBuilder,
         sample_size: u64,
@@ -32,7 +32,7 @@ impl SeekerSample {
 
         let headers = csv_reader.byte_headers()?.clone();
 
-        let first_record_start_pos = if csv_reader.has_headers() {
+        let first_record_pos = if csv_reader.has_headers() {
             initial_pos + csv_reader.position()
         } else {
             initial_pos
@@ -77,7 +77,7 @@ impl SeekerSample {
             record_count: i,
             max_record_size: *record_sizes.last().unwrap(),
             median_record_size: record_sizes[record_sizes.len() / 2],
-            first_record_start_pos,
+            first_record_pos,
             fields_mean_sizes,
             has_reached_eof,
             file_len,
@@ -239,8 +239,8 @@ pub struct Seeker<R> {
 }
 
 impl<R: Read + Seek> Seeker<R> {
-    pub fn sample(&self) -> &SeekerSample {
-        &self.sample
+    pub fn first_record_pos(&self) -> u64 {
+        self.sample.first_record_pos
     }
 
     #[inline(always)]
@@ -250,17 +250,35 @@ impl<R: Read + Seek> Seeker<R> {
         if sample.has_reached_eof {
             sample.record_count
         } else {
-            ((sample.file_len - sample.first_record_start_pos) as f64
-                / sample.median_record_size as f64)
+            ((sample.file_len - sample.first_record_pos) as f64 / sample.median_record_size as f64)
                 .ceil() as u64
         }
     }
 
     pub fn seek(&mut self, from_pos: u64) -> error::Result<Option<(u64, ByteRecord)>> {
-        // TODO: prevent oob
-        // TODO: special case when first record
+        if from_pos < self.first_record_pos() || from_pos >= self.sample.file_len {
+            return Err(Error::new(ErrorKind::OutOfBounds {
+                pos: from_pos,
+                start: self.first_record_pos(),
+                end: self.sample.file_len,
+            }));
+        }
+
         // TODO: deal with last chunk of the file
         self.inner.seek(SeekFrom::Start(from_pos))?;
+
+        // NOTE: first record does not need to be more complex
+        if from_pos == self.first_record_pos() {
+            let first_record = self
+                .builder
+                .from_reader(&mut self.inner)
+                .read_byte_record()?
+                .unwrap()
+                .to_byte_record();
+
+            return Ok(Some((self.first_record_pos(), first_record)));
+        }
+
         (&mut self.inner)
             .take(self.lookahead_factor * self.sample.max_record_size)
             .read_to_end(&mut self.scratch)?;
@@ -316,7 +334,7 @@ impl<R: Read + Seek> Seeker<R> {
         let reverse_reader = ReverseReader::new(
             &mut self.inner,
             self.sample.file_len,
-            self.sample.first_record_start_pos,
+            self.sample.first_record_pos,
         );
 
         let mut reverse_csv_reader = self.builder.from_reader(reverse_reader);
