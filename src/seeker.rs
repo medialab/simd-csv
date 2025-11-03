@@ -243,7 +243,14 @@ impl<R: Read + Seek> Seeker<R> {
         self.sample.first_record_pos
     }
 
-    #[inline(always)]
+    #[inline]
+    pub fn exact_count(&self) -> Option<u64> {
+        self.sample
+            .has_reached_eof
+            .then(|| self.sample.record_count)
+    }
+
+    #[inline]
     pub fn approx_count(&self) -> u64 {
         let sample = &self.sample;
 
@@ -328,6 +335,14 @@ impl<R: Read + Seek> Seeker<R> {
 
     pub fn byte_headers(&self) -> &ByteRecord {
         &self.sample.headers
+    }
+
+    pub fn first_byte_record(&mut self) -> error::Result<Option<ByteRecord>> {
+        match self.seek(self.first_record_pos()) {
+            Ok(Some((_, record))) => Ok(Some(record)),
+            Ok(None) => Ok(None),
+            Err(err) => Err(err),
+        }
     }
 
     pub fn last_byte_record(&mut self) -> error::Result<Option<ByteRecord>> {
