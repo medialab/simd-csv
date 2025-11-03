@@ -325,6 +325,21 @@ impl ByteRecord {
             .copied()
             .map(|(start, end)| &self.data[start..end])
     }
+
+    fn reverse(&mut self) {
+        self.data.reverse();
+        self.bounds.reverse();
+
+        let len = self.data.len();
+
+        for (start, end) in self.bounds.iter_mut() {
+            let new_end = len - *start;
+            let new_start = len - *end;
+
+            *start = new_start;
+            *end = new_end;
+        }
+    }
 }
 
 impl PartialEq for ByteRecord {
@@ -594,5 +609,16 @@ mod tests {
         record.push_field(b"next");
 
         assert_eq!(record.iter().collect::<Vec<_>>(), vec![b"test", b"next"]);
+    }
+
+    #[test]
+    fn test_reverse_byte_record() {
+        let record = brec!["name", "surname", "age"];
+        let mut reversed = record.clone();
+        reversed.reverse();
+
+        assert_eq!(reversed, brec!["ega", "emanrus", "eman"]);
+        reversed.reverse();
+        assert_eq!(record, reversed);
     }
 }

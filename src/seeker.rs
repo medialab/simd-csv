@@ -251,7 +251,7 @@ impl<R: Read + Seek> Seeker<R> {
     pub fn exact_count(&self) -> Option<u64> {
         self.sample
             .has_reached_eof
-            .then(|| self.sample.record_count)
+            .then_some(self.sample.record_count)
     }
 
     #[inline]
