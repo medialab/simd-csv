@@ -18,6 +18,10 @@ struct Args {
     /// Approx count
     #[arg(long)]
     approx_count: bool,
+
+    /// No headers?
+    #[arg(short, long)]
+    no_headers: bool,
 }
 
 impl Args {
@@ -37,6 +41,7 @@ fn main() -> anyhow::Result<()> {
 
     let mut seeker = simd_csv::SeekerBuilder::new()
         .delimiter(delimiter)
+        .has_headers(!args.no_headers)
         .from_reader(file)?
         .unwrap();
 

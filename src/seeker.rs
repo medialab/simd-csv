@@ -43,6 +43,7 @@ impl SeekerSample {
 
         while i < sample_size {
             if let Some(record) = csv_reader.read_byte_record()? {
+                // The "+ 1" is taking \n into account for better accuracy
                 let record_size = record.as_slice().len() as u64 + 1;
 
                 record_sizes.push(record_size);
@@ -64,7 +65,7 @@ impl SeekerSample {
         let fields_mean_sizes = (0..headers.len())
             .map(|i| {
                 fields_sizes.iter().map(|sizes| sizes[i]).sum::<usize>() as f64
-                    / headers.len() as f64
+                    / fields_sizes.len() as f64
             })
             .collect();
 
@@ -250,10 +251,11 @@ impl<R: Read + Seek> Seeker<R> {
         if sample.has_reached_eof {
             sample.record_count
         } else {
-            let estimation =
-                (sample.file_len as f64 / sample.median_record_size as f64).ceil() as u64;
+            let estimation = ((sample.file_len - sample.first_record_start_pos) as f64
+                / sample.median_record_size as f64)
+                .ceil() as u64;
 
-            estimation.saturating_sub(if self.has_headers { 1 } else { 0 })
+            estimation
         }
     }
 
