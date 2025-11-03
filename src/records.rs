@@ -326,7 +326,7 @@ impl ByteRecord {
             .map(|(start, end)| &self.data[start..end])
     }
 
-    fn reverse(&mut self) {
+    pub(crate) fn reverse(&mut self) {
         self.data.reverse();
         self.bounds.reverse();
 

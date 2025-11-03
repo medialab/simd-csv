@@ -1,10 +1,10 @@
-use std::io::{BufReader, Read};
+use std::io::{BufRead, BufReader, Read, Seek, SeekFrom};
 
 use crate::buffer::BufReaderWithPosition;
 use crate::core::{CoreReader, ReadResult};
 use crate::error::{self, Error, ErrorKind};
 use crate::records::{ByteRecord, ByteRecordBuilder};
-use crate::utils::trim_bom;
+use crate::utils::{self, trim_bom};
 
 pub struct ReaderBuilder {
     delimiter: u8,
@@ -80,6 +80,36 @@ impl ReaderBuilder {
             has_headers: self.has_headers,
             index: 0,
         }
+    }
+
+    pub fn reverse_from_reader<R: Read + Seek>(
+        &self,
+        mut reader: R,
+    ) -> error::Result<ReverseReader<R>> {
+        let initial_pos = reader.stream_position()?;
+
+        let mut forward_reader = self.from_reader(reader);
+        let headers = forward_reader.byte_headers()?.clone();
+        let position_after_headers = forward_reader.position();
+
+        let mut reader = forward_reader.into_inner();
+
+        let file_len = reader.seek(SeekFrom::End(0))?;
+
+        let offset = if self.has_headers {
+            initial_pos + position_after_headers
+        } else {
+            initial_pos
+        };
+
+        let reverse_io_reader = utils::ReverseReader::new(reader, file_len, offset);
+
+        Ok(ReverseReader {
+            buffer: self.bufreader(reverse_io_reader).into_inner(),
+            inner: CoreReader::new(self.delimiter, self.quote),
+            flexible: self.flexible,
+            headers,
+        })
     }
 }
 
@@ -264,6 +294,124 @@ pub struct ByteRecordsIntoIter<R> {
 }
 
 impl<R: Read> Iterator for ByteRecordsIntoIter<R> {
+    type Item = error::Result<ByteRecord>;
+
+    #[inline]
+    fn next(&mut self) -> Option<Self::Item> {
+        // NOTE: cloning the record will not carry over excess capacity
+        // because the record only contains `Vec` currently.
+        match self.reader.read_byte_record(&mut self.record) {
+            Err(err) => Some(Err(err)),
+            Ok(true) => Some(Ok(self.record.clone())),
+            Ok(false) => None,
+        }
+    }
+}
+
+pub struct ReverseReader<R> {
+    inner: CoreReader,
+    buffer: BufReader<utils::ReverseReader<R>>,
+    flexible: bool,
+    headers: ByteRecord,
+}
+
+impl<R: Read + Seek> ReverseReader<R> {
+    pub fn from_reader(reader: R) -> error::Result<Self> {
+        ReaderBuilder::new().reverse_from_reader(reader)
+    }
+
+    pub fn byte_headers(&self) -> &ByteRecord {
+        &self.headers
+    }
+
+    #[inline]
+    fn check_field_count(&mut self, written: usize) -> error::Result<()> {
+        if self.flexible {
+            return Ok(());
+        }
+
+        if written != self.headers.len() {
+            return Err(Error::new(ErrorKind::UnequalLengths {
+                expected_len: self.headers.len(),
+                len: written,
+                pos: None,
+            }));
+        }
+
+        Ok(())
+    }
+
+    pub fn read_byte_record(&mut self, record: &mut ByteRecord) -> error::Result<bool> {
+        use ReadResult::*;
+
+        record.clear();
+
+        let mut record_builder = ByteRecordBuilder::wrap(record);
+
+        loop {
+            let input = self.buffer.fill_buf()?;
+
+            let (result, pos) = self.inner.read_record(input, &mut record_builder);
+
+            self.buffer.consume(pos);
+
+            match result {
+                End => {
+                    return Ok(false);
+                }
+                Cr | Lf | InputEmpty => {
+                    continue;
+                }
+                Record => {
+                    self.check_field_count(record.len())?;
+                    record.reverse();
+                    return Ok(true);
+                }
+            };
+        }
+    }
+
+    pub fn byte_records(&mut self) -> ReverseByteRecordsIter<'_, R> {
+        ReverseByteRecordsIter {
+            reader: self,
+            record: ByteRecord::new(),
+        }
+    }
+
+    pub fn into_byte_records(self) -> ReverseByteRecordsIntoIter<R> {
+        ReverseByteRecordsIntoIter {
+            reader: self,
+            record: ByteRecord::new(),
+        }
+    }
+}
+
+pub struct ReverseByteRecordsIter<'r, R> {
+    reader: &'r mut ReverseReader<R>,
+    record: ByteRecord,
+}
+
+impl<R: Read + Seek> Iterator for ReverseByteRecordsIter<'_, R> {
+    type Item = error::Result<ByteRecord>;
+
+    #[inline]
+    fn next(&mut self) -> Option<Self::Item> {
+        // NOTE: cloning the record will not carry over excess capacity
+        // because the record only contains `Vec` currently.
+        match self.reader.read_byte_record(&mut self.record) {
+            Err(err) => Some(Err(err)),
+            Ok(true) => Some(Ok(self.record.clone())),
+            Ok(false) => None,
+        }
+    }
+}
+
+pub struct ReverseByteRecordsIntoIter<R> {
+    reader: ReverseReader<R>,
+    record: ByteRecord,
+}
+
+impl<R: Read + Seek> Iterator for ReverseByteRecordsIntoIter<R> {
     type Item = error::Result<ByteRecord>;
 
     #[inline]
@@ -500,6 +648,25 @@ mod tests {
         }
 
         assert_eq!(positions, vec![0, 13, 32, 54]);
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_reverse_reader() -> error::Result<()> {
+        let data = b"name,surname\njohn,landis\nbeatrice,babka\nevan,michalak";
+        let mut reader = ReverseReader::from_reader(Cursor::new(data))?;
+
+        assert_eq!(
+            reader.byte_records().collect::<Result<Vec<_>, _>>()?,
+            vec![
+                brec!["evan", "michalak"],
+                brec!["beatrice", "babka"],
+                brec!["john", "landis"]
+            ]
+        );
+
+        assert_eq!(reader.byte_headers(), &brec!["name", "surname"]);
 
         Ok(())
     }
