@@ -19,6 +19,10 @@ struct Args {
     #[arg(long)]
     approx_count: bool,
 
+    /// Segments
+    #[arg(long)]
+    segments: Option<usize>,
+
     /// No headers?
     #[arg(short, long)]
     no_headers: bool,
@@ -51,6 +55,11 @@ fn main() -> anyhow::Result<()> {
         println!("{}", seeker.approx_count());
     } else if args.last {
         println!("{:?}", seeker.last_byte_record()?);
+    } else if let Some(count) = args.segments {
+        println!("from,to");
+        for (from, to) in seeker.segments(count)? {
+            println!("{},{}", from, to);
+        }
     } else {
         unimplemented!()
     }

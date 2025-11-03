@@ -243,6 +243,10 @@ impl<R: Read + Seek> Seeker<R> {
         self.sample.first_record_pos
     }
 
+    pub fn file_len(&self) -> u64 {
+        self.sample.file_len
+    }
+
     #[inline]
     pub fn exact_count(&self) -> Option<u64> {
         self.sample
@@ -286,6 +290,7 @@ impl<R: Read + Seek> Seeker<R> {
             return Ok(Some((self.first_record_pos(), first_record)));
         }
 
+        self.scratch.clear();
         (&mut self.inner)
             .take(self.lookahead_factor * self.sample.max_record_size)
             .read_to_end(&mut self.scratch)?;
@@ -331,6 +336,43 @@ impl<R: Read + Seek> Seeker<R> {
                 }
             }
         }
+    }
+
+    pub fn segments(&mut self, count: usize) -> error::Result<Vec<(u64, u64)>> {
+        let sample = &self.sample;
+        let file_len = sample.file_len;
+
+        // File is way too short
+        if self.sample.record_count < count as u64 {
+            return Ok(vec![(self.first_record_pos(), file_len)]);
+        }
+
+        let adjusted_file_len = file_len - self.first_record_pos();
+
+        // Adjusting chunks
+        let count = count
+            .min(
+                (file_len / (sample.max_record_size * self.lookahead_factor)).saturating_sub(1)
+                    as usize,
+            )
+            .max(1);
+
+        let mut offsets = vec![self.first_record_pos()];
+
+        for i in 1..count {
+            let file_offset = ((i as f64 / count as f64) * adjusted_file_len as f64).floor() as u64
+                + self.first_record_pos();
+
+            if let Some((record_offset, _)) = self.seek(file_offset)? {
+                offsets.push(record_offset);
+            } else {
+                break;
+            }
+        }
+
+        offsets.push(file_len);
+
+        Ok(offsets.windows(2).map(|w| (w[0], w[1])).collect())
     }
 
     pub fn byte_headers(&self) -> &ByteRecord {
