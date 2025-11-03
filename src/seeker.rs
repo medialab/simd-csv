@@ -2,6 +2,7 @@ use std::io::{Cursor, Read, Seek, SeekFrom};
 
 use crate::error;
 use crate::records::ByteRecord;
+use crate::utils::ReverseReader;
 use crate::zero_copy_reader::{ZeroCopyReader, ZeroCopyReaderBuilder};
 
 #[derive(Debug)]
@@ -178,7 +179,6 @@ impl SeekerBuilder {
                 builder.has_headers(false).flexible(true);
 
                 Ok(Some(Seeker {
-                    has_headers: self.has_headers,
                     inner: reader,
                     lookahead_factor: self.lookahead_factor,
                     scratch: Vec::with_capacity(
@@ -235,7 +235,6 @@ pub struct Seeker<R> {
     sample: SeekerSample,
     lookahead_factor: u64,
     scratch: Vec<u8>,
-    has_headers: bool,
     builder: ZeroCopyReaderBuilder,
 }
 
@@ -251,11 +250,9 @@ impl<R: Read + Seek> Seeker<R> {
         if sample.has_reached_eof {
             sample.record_count
         } else {
-            let estimation = ((sample.file_len - sample.first_record_start_pos) as f64
+            ((sample.file_len - sample.first_record_start_pos) as f64
                 / sample.median_record_size as f64)
-                .ceil() as u64;
-
-            estimation
+                .ceil() as u64
         }
     }
 
@@ -309,6 +306,24 @@ impl<R: Read + Seek> Seeker<R> {
                 }
             }
         }
+    }
+
+    pub fn byte_headers(&self) -> &ByteRecord {
+        &self.sample.headers
+    }
+
+    pub fn last_byte_record(&mut self) -> error::Result<Option<ByteRecord>> {
+        let reverse_reader = ReverseReader::new(
+            &mut self.inner,
+            self.sample.file_len,
+            self.sample.first_record_start_pos,
+        );
+
+        let mut reverse_csv_reader = self.builder.from_reader(reverse_reader);
+
+        reverse_csv_reader
+            .read_byte_record()
+            .map(|record_opt| record_opt.map(|record| record.to_byte_record_in_reverse()))
     }
 
     pub fn into_inner(self) -> R {

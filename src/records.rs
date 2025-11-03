@@ -48,7 +48,26 @@ impl<'a> ZeroCopyByteRecord<'a> {
     pub fn iter(&self) -> ZeroCopyByteRecordIter<'_> {
         ZeroCopyByteRecordIter {
             record: self,
-            current: 0,
+            current_forward: 0,
+            current_backward: self.len(),
+        }
+    }
+
+    #[inline]
+    pub fn unquoted_iter(&self) -> ZeroCopyByteRecordUnquotedIter<'_> {
+        ZeroCopyByteRecordUnquotedIter {
+            record: self,
+            current_forward: 0,
+            current_backward: self.len(),
+        }
+    }
+
+    #[inline]
+    pub fn unescaped_iter(&self) -> ZeroCopyByteRecordUnescapedIter<'_> {
+        ZeroCopyByteRecordUnescapedIter {
+            record: self,
+            current_forward: 0,
+            current_backward: self.len(),
         }
     }
 
@@ -120,6 +139,17 @@ impl<'a> ZeroCopyByteRecord<'a> {
         self.read_byte_record(&mut record);
         record
     }
+
+    #[inline]
+    pub(crate) fn to_byte_record_in_reverse(&self) -> ByteRecord {
+        let mut record = ByteRecord::new();
+
+        for cell in self.unescaped_iter().rev() {
+            record.push_field_in_reverse(&cell);
+        }
+
+        record
+    }
 }
 
 impl fmt::Debug for ZeroCopyByteRecord<'_> {
@@ -133,42 +163,66 @@ impl fmt::Debug for ZeroCopyByteRecord<'_> {
     }
 }
 
-pub struct ZeroCopyByteRecordIter<'a> {
-    record: &'a ZeroCopyByteRecord<'a>,
-    current: usize,
-}
+macro_rules! make_zero_copy_iterator {
+    ($name:ident, $method: ident, $out_type: ty) => {
+        pub struct $name<'a> {
+            record: &'a ZeroCopyByteRecord<'a>,
+            current_forward: usize,
+            current_backward: usize,
+        }
 
-impl ExactSizeIterator for ZeroCopyByteRecordIter<'_> {}
+        impl ExactSizeIterator for $name<'_> {}
 
-impl<'a> Iterator for ZeroCopyByteRecordIter<'a> {
-    type Item = &'a [u8];
+        impl<'a> Iterator for $name<'a> {
+            type Item = $out_type;
 
-    #[inline]
-    fn next(&mut self) -> Option<Self::Item> {
-        match self.record.get(self.current) {
-            None => None,
-            Some(cell) => {
-                self.current += 1;
-                Some(cell)
+            #[inline]
+            fn next(&mut self) -> Option<Self::Item> {
+                if self.current_forward == self.current_backward {
+                    None
+                } else {
+                    let cell = self.record.$method(self.current_forward);
+
+                    self.current_forward += 1;
+
+                    cell
+                }
+            }
+
+            #[inline]
+            fn size_hint(&self) -> (usize, Option<usize>) {
+                let size = self.current_backward - self.current_forward;
+
+                (size, Some(size))
+            }
+
+            #[inline]
+            fn count(self) -> usize
+            where
+                Self: Sized,
+            {
+                self.len()
             }
         }
-    }
 
-    #[inline]
-    fn size_hint(&self) -> (usize, Option<usize>) {
-        let size = self.record.len() - self.current;
+        impl DoubleEndedIterator for $name<'_> {
+            #[inline]
+            fn next_back(&mut self) -> Option<Self::Item> {
+                if self.current_forward == self.current_backward {
+                    None
+                } else {
+                    self.current_backward -= 1;
 
-        (size, Some(size))
-    }
-
-    #[inline]
-    fn count(self) -> usize
-    where
-        Self: Sized,
-    {
-        self.len()
-    }
+                    self.record.$method(self.current_backward)
+                }
+            }
+        }
+    };
 }
+
+make_zero_copy_iterator!(ZeroCopyByteRecordIter, get, &'a [u8]);
+make_zero_copy_iterator!(ZeroCopyByteRecordUnquotedIter, unquote, &'a [u8]);
+make_zero_copy_iterator!(ZeroCopyByteRecordUnescapedIter, unescape, Cow<'a, [u8]>);
 
 impl Index<usize> for ZeroCopyByteRecord<'_> {
     type Output = [u8];
@@ -227,7 +281,7 @@ impl ByteRecord {
         ByteRecordIter {
             record: self,
             current_forward: 0,
-            current_reverse: self.len(),
+            current_backward: self.len(),
         }
     }
 
@@ -244,6 +298,24 @@ impl ByteRecord {
         };
 
         self.bounds.push((start, self.data.len()));
+    }
+
+    #[inline]
+    fn push_field_in_reverse(&mut self, bytes: &[u8]) {
+        self.data.extend_from_slice(bytes);
+
+        let bounds_len = self.bounds.len();
+
+        let start = if bounds_len == 0 {
+            0
+        } else {
+            self.bounds[bounds_len - 1].1
+        };
+
+        let bounds = (start, self.data.len());
+        self.data[bounds.0..bounds.1].reverse();
+
+        self.bounds.push(bounds);
     }
 
     #[inline]
@@ -345,7 +417,7 @@ impl fmt::Debug for ByteRecord {
 pub struct ByteRecordIter<'a> {
     record: &'a ByteRecord,
     current_forward: usize,
-    current_reverse: usize,
+    current_backward: usize,
 }
 
 impl ExactSizeIterator for ByteRecordIter<'_> {}
@@ -355,7 +427,7 @@ impl<'a> Iterator for ByteRecordIter<'a> {
 
     #[inline]
     fn next(&mut self) -> Option<Self::Item> {
-        if self.current_forward == self.current_reverse {
+        if self.current_forward == self.current_backward {
             None
         } else {
             let (start, end) = self.record.bounds[self.current_forward];
@@ -368,7 +440,7 @@ impl<'a> Iterator for ByteRecordIter<'a> {
 
     #[inline]
     fn size_hint(&self) -> (usize, Option<usize>) {
-        let size = self.current_reverse - self.current_forward;
+        let size = self.current_backward - self.current_forward;
 
         (size, Some(size))
     }
@@ -385,12 +457,12 @@ impl<'a> Iterator for ByteRecordIter<'a> {
 impl DoubleEndedIterator for ByteRecordIter<'_> {
     #[inline]
     fn next_back(&mut self) -> Option<Self::Item> {
-        if self.current_forward == self.current_reverse {
+        if self.current_forward == self.current_backward {
             None
         } else {
-            self.current_reverse -= 1;
+            self.current_backward -= 1;
 
-            let (start, end) = self.record.bounds[self.current_reverse];
+            let (start, end) = self.record.bounds[self.current_backward];
 
             Some(&self.record.data[start..end])
         }

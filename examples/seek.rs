@@ -15,6 +15,10 @@ struct Args {
     #[arg(long)]
     offset: Option<u64>,
 
+    /// Last record
+    #[arg(long)]
+    last: bool,
+
     /// Approx count
     #[arg(long)]
     approx_count: bool,
@@ -51,6 +55,10 @@ fn main() -> anyhow::Result<()> {
         dbg!(seeker.seek(offset)?);
     } else if args.approx_count {
         println!("{}", seeker.approx_count());
+    } else if args.last {
+        println!("{:?}", seeker.last_byte_record()?);
+    } else {
+        unimplemented!()
     }
 
     Ok(())
