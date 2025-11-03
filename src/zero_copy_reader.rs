@@ -73,6 +73,7 @@ impl ZeroCopyReaderBuilder {
             flexible: self.flexible,
             has_read: false,
             must_reemit_headers: !self.has_headers,
+            has_headers: self.has_headers,
             index: 0,
         }
     }
@@ -87,6 +88,7 @@ pub struct ZeroCopyReader<R> {
     flexible: bool,
     has_read: bool,
     must_reemit_headers: bool,
+    has_headers: bool,
     index: u64,
 }
 
@@ -150,6 +152,11 @@ impl<R: Read> ZeroCopyReader<R> {
         self.on_first_read()?;
 
         Ok(&self.byte_headers)
+    }
+
+    #[inline]
+    pub fn has_headers(&self) -> bool {
+        self.has_headers
     }
 
     fn read_byte_record_impl(&mut self) -> error::Result<Option<ZeroCopyByteRecord<'_>>> {

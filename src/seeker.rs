@@ -26,9 +26,16 @@ impl SeekerSample {
         // This is for instance the case for CSV-adjacent formats boasting
         // metadata in a header before tabular records even start.
         let initial_pos = reader.stream_position()?;
+
         let mut csv_reader = csv_reader_builder.from_reader(&mut reader);
+
         let headers = csv_reader.byte_headers()?.clone();
-        let first_record_start_pos = initial_pos + csv_reader.position();
+
+        let first_record_start_pos = if csv_reader.has_headers() {
+            initial_pos + csv_reader.position()
+        } else {
+            initial_pos
+        };
 
         let mut i: u64 = 0;
         let mut record_sizes: Vec<u64> = Vec::new();
