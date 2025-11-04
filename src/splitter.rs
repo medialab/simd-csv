@@ -189,7 +189,11 @@ impl<R: Read> Splitter<R> {
 
     #[inline(always)]
     pub fn position(&self) -> u64 {
-        self.buffer.position()
+        if self.must_reemit_headers {
+            0
+        } else {
+            self.buffer.position()
+        }
     }
 }
 

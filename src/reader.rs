@@ -257,7 +257,11 @@ impl<R: Read> Reader<R> {
 
     #[inline(always)]
     pub fn position(&self) -> u64 {
-        self.buffer.position()
+        if self.must_reemit_headers {
+            0
+        } else {
+            self.buffer.position()
+        }
     }
 }
 
@@ -641,6 +645,14 @@ mod tests {
         }
 
         assert_eq!(positions, vec![0, 13, 32, 54]);
+
+        let mut reader = ReaderBuilder::new()
+            .has_headers(false)
+            .from_reader(&data[..]);
+
+        reader.byte_headers()?;
+
+        assert_eq!(reader.position(), 0);
 
         Ok(())
     }
