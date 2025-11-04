@@ -186,6 +186,7 @@ impl SeekerBuilder {
                     ),
                     sample,
                     builder,
+                    has_headers: self.has_headers,
                 }))
             }
             Ok(None) => Ok(None),
@@ -236,9 +237,14 @@ pub struct Seeker<R> {
     lookahead_factor: u64,
     scratch: Vec<u8>,
     builder: ZeroCopyReaderBuilder,
+    has_headers: bool,
 }
 
 impl<R: Read + Seek> Seeker<R> {
+    pub fn has_headers(&self) -> bool {
+        self.has_headers
+    }
+
     pub fn first_record_pos(&self) -> u64 {
         self.sample.first_record_pos
     }
@@ -406,14 +412,14 @@ impl<R: Read + Seek> Seeker<R> {
 
     pub fn into_zero_copy_reader(mut self) -> error::Result<ZeroCopyReader<R>> {
         self.inner.seek(SeekFrom::Start(self.sample.initial_pos))?;
-        self.builder.has_headers(true);
+        self.builder.has_headers(self.has_headers);
         self.builder.flexible(false);
         Ok(self.builder.from_reader(self.inner))
     }
 
     pub fn into_splitter(mut self) -> error::Result<Splitter<R>> {
         self.inner.seek(SeekFrom::Start(self.sample.initial_pos))?;
-        self.builder.has_headers(true);
+        self.builder.has_headers(self.has_headers);
         Ok(self.builder.to_splitter_builder().from_reader(self.inner))
     }
 }
