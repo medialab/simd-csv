@@ -11,6 +11,7 @@ struct SeekerSample {
     record_count: u64,
     max_record_size: u64,
     median_record_size: u64,
+    initial_pos: u64,
     first_record_pos: u64,
     fields_mean_sizes: Vec<f64>,
     file_len: u64,
@@ -77,6 +78,7 @@ impl SeekerSample {
             record_count: i,
             max_record_size: *record_sizes.last().unwrap(),
             median_record_size: record_sizes[record_sizes.len() / 2],
+            initial_pos,
             first_record_pos,
             fields_mean_sizes,
             has_reached_eof,
@@ -402,5 +404,10 @@ impl<R: Read + Seek> Seeker<R> {
 
     pub fn into_inner(self) -> R {
         self.inner
+    }
+
+    pub fn into_zero_copy_reader(mut self) -> error::Result<ZeroCopyReader<R>> {
+        self.inner.seek(SeekFrom::Start(self.sample.initial_pos))?;
+        Ok(self.builder.from_reader(self.inner))
     }
 }
