@@ -9,6 +9,7 @@ pub struct SplitterBuilder {
     delimiter: u8,
     quote: u8,
     buffer_capacity: Option<usize>,
+    has_headers: bool,
 }
 
 impl Default for SplitterBuilder {
@@ -17,6 +18,7 @@ impl Default for SplitterBuilder {
             delimiter: b',',
             quote: b'"',
             buffer_capacity: None,
+            has_headers: true,
         }
     }
 }
@@ -42,6 +44,11 @@ impl SplitterBuilder {
         self
     }
 
+    pub fn has_headers(&mut self, yes: bool) -> &mut Self {
+        self.has_headers = yes;
+        self
+    }
+
     pub fn buffer_capacity(&mut self, capacity: usize) -> &mut Self {
         self.buffer_capacity = Some(capacity);
         self
@@ -51,20 +58,37 @@ impl SplitterBuilder {
         Splitter {
             buffer: ScratchBuffer::with_optional_capacity(self.buffer_capacity, reader),
             inner: CoreReader::new(self.delimiter, self.quote),
+            headers: Vec::new(),
             has_read: false,
+            has_headers: self.has_headers,
+            must_reemit_headers: !self.has_headers,
         }
     }
 }
 
+#[derive(Debug)]
 pub struct Splitter<R> {
     buffer: ScratchBuffer<R>,
     inner: CoreReader,
+    headers: Vec<u8>,
     has_read: bool,
+    has_headers: bool,
+    must_reemit_headers: bool,
 }
 
 impl<R: Read> Splitter<R> {
     pub fn from_reader(reader: R) -> Self {
         SplitterBuilder::new().from_reader(reader)
+    }
+
+    pub fn has_headers(&self) -> bool {
+        self.has_headers
+    }
+
+    pub fn byte_headers(&mut self) -> error::Result<&[u8]> {
+        self.on_first_read()?;
+
+        Ok(&self.headers)
     }
 
     #[inline(always)]
@@ -76,6 +100,13 @@ impl<R: Read> Splitter<R> {
         let input = self.buffer.fill_buf()?;
         let bom_len = trim_bom(input);
         self.buffer.consume(bom_len);
+
+        if let Some(record) = self.split_record_impl()? {
+            self.headers = record.to_vec();
+        } else {
+            self.must_reemit_headers = false;
+        }
+
         self.has_read = true;
 
         Ok(())
@@ -85,8 +116,14 @@ impl<R: Read> Splitter<R> {
         use ReadResult::*;
 
         self.on_first_read()?;
+        self.buffer.reset();
 
         let mut count: u64 = 0;
+
+        if self.must_reemit_headers {
+            count += 1;
+            self.must_reemit_headers = false;
+        }
 
         loop {
             let input = self.buffer.fill_buf()?;
@@ -107,10 +144,8 @@ impl<R: Read> Splitter<R> {
         Ok(count)
     }
 
-    pub fn split_record(&mut self) -> error::Result<Option<&[u8]>> {
+    pub fn split_record_impl(&mut self) -> error::Result<Option<&[u8]>> {
         use ReadResult::*;
-
-        self.on_first_read()?;
 
         self.buffer.reset();
 
@@ -137,6 +172,17 @@ impl<R: Read> Splitter<R> {
         }
     }
 
+    pub fn split_record(&mut self) -> error::Result<Option<&[u8]>> {
+        self.on_first_read()?;
+
+        if self.must_reemit_headers {
+            self.must_reemit_headers = false;
+            return Ok(Some(&self.headers));
+        }
+
+        self.split_record_impl()
+    }
+
     pub fn into_bufreader(self) -> BufReader<R> {
         self.buffer.into_bufreader()
     }
@@ -154,12 +200,16 @@ mod tests {
     use super::*;
 
     fn count_records(data: &str, capacity: usize) -> u64 {
-        let mut splitter = SplitterBuilder::with_capacity(capacity).from_reader(Cursor::new(data));
+        let mut splitter = SplitterBuilder::with_capacity(capacity)
+            .has_headers(false)
+            .from_reader(Cursor::new(data));
         splitter.count_records().unwrap()
     }
 
     fn split_records(data: &str, capacity: usize) -> u64 {
-        let mut splitter = SplitterBuilder::with_capacity(capacity).from_reader(Cursor::new(data));
+        let mut splitter = SplitterBuilder::with_capacity(capacity)
+            .has_headers(false)
+            .from_reader(Cursor::new(data));
         let mut count: u64 = 0;
 
         while let Some(_) = splitter.split_record().unwrap() {
@@ -226,7 +276,7 @@ mod tests {
         // Counting
         let mut reader = Splitter::from_reader(Cursor::new(data));
 
-        assert_eq!(reader.count_records()?, 4);
+        assert_eq!(reader.count_records()?, 3);
 
         Ok(())
     }

@@ -1,5 +1,6 @@
 use std::io::{BufRead, BufReader, Read, Result};
 
+#[derive(Debug)]
 pub struct BufReaderWithPosition<R> {
     inner: BufReader<R>,
     pos: u64,
@@ -56,6 +57,7 @@ impl<R: Read> BufReaderWithPosition<R> {
     }
 }
 
+#[derive(Debug)]
 pub struct ScratchBuffer<R> {
     inner: BufReaderWithPosition<R>,
     scratch: Vec<u8>,
