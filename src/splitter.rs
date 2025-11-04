@@ -183,6 +183,23 @@ impl<R: Read> Splitter<R> {
         self.split_record_impl()
     }
 
+    pub fn split_record_with_position(&mut self) -> error::Result<Option<(u64, &[u8])>> {
+        self.on_first_read()?;
+
+        let pos = self.position();
+
+        if self.must_reemit_headers {
+            self.must_reemit_headers = false;
+            return Ok(Some((pos, &self.headers)));
+        }
+
+        match self.split_record_impl() {
+            Ok(Some(record)) => Ok(Some((pos, record))),
+            Ok(None) => Ok(None),
+            Err(err) => Err(err),
+        }
+    }
+
     pub fn into_bufreader(self) -> BufReader<R> {
         self.buffer.into_bufreader()
     }
