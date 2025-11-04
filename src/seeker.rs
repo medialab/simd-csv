@@ -1,4 +1,5 @@
 use std::io::{Cursor, Read, Seek, SeekFrom};
+use std::ops::Range;
 
 use crate::error::{self, Error, ErrorKind};
 use crate::records::ByteRecord;
@@ -255,6 +256,11 @@ impl<R: Read + Seek> Seeker<R> {
 
     pub fn file_len(&self) -> u64 {
         self.sample.file_len
+    }
+
+    #[inline(always)]
+    pub fn range(&self) -> Range<u64> {
+        self.sample.first_record_position..self.sample.file_len
     }
 
     #[inline]
