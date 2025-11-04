@@ -105,7 +105,7 @@ pub struct SeekerBuilder {
     delimiter: u8,
     quote: u8,
     has_headers: bool,
-    buffer_capacity: Option<usize>,
+    buffer_capacity: usize,
     sample_size: u64,
     lookahead_factor: u64,
 }
@@ -115,7 +115,7 @@ impl Default for SeekerBuilder {
         Self {
             delimiter: b',',
             quote: b'"',
-            buffer_capacity: None,
+            buffer_capacity: 8192,
             has_headers: true,
             sample_size: 128,
             lookahead_factor: 32,
@@ -145,7 +145,7 @@ impl SeekerBuilder {
     }
 
     pub fn buffer_capacity(&mut self, capacity: usize) -> &mut Self {
-        self.buffer_capacity = Some(capacity);
+        self.buffer_capacity = capacity;
         self
     }
 
@@ -167,11 +167,8 @@ impl SeekerBuilder {
     pub fn from_reader<R: Read + Seek>(&self, mut reader: R) -> error::Result<Option<Seeker<R>>> {
         let mut builder = ZeroCopyReaderBuilder::new();
 
-        if let Some(capacity) = self.buffer_capacity {
-            builder.buffer_capacity(capacity);
-        }
-
         builder
+            .buffer_capacity(self.buffer_capacity)
             .delimiter(self.delimiter)
             .quote(self.quote)
             .has_headers(self.has_headers);

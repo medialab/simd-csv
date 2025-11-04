@@ -8,7 +8,7 @@ use crate::records::{ByteRecord, ZeroCopyByteRecord};
 pub struct WriterBuilder {
     delimiter: u8,
     quote: u8,
-    buffer_capacity: Option<usize>,
+    buffer_capacity: usize,
     flexible: bool,
 }
 
@@ -17,7 +17,7 @@ impl Default for WriterBuilder {
         Self {
             delimiter: b',',
             quote: b'"',
-            buffer_capacity: None,
+            buffer_capacity: 8192,
             flexible: false,
         }
     }
@@ -45,20 +45,13 @@ impl WriterBuilder {
     }
 
     pub fn buffer_capacity(&mut self, capacity: usize) -> &mut Self {
-        self.buffer_capacity = Some(capacity);
+        self.buffer_capacity = capacity;
         self
     }
 
     pub fn flexible(&mut self, yes: bool) -> &mut Self {
         self.flexible = yes;
         self
-    }
-
-    fn bufwriter<W: Write>(&self, writer: W) -> BufWriter<W> {
-        match self.buffer_capacity {
-            None => BufWriter::new(writer),
-            Some(capacity) => BufWriter::with_capacity(capacity, writer),
-        }
     }
 
     pub fn from_writer<W: Write>(&self, writer: W) -> Writer<W> {
@@ -71,7 +64,7 @@ impl WriterBuilder {
         Writer {
             delimiter: self.delimiter,
             quote: self.quote,
-            buffer: self.bufwriter(writer),
+            buffer: BufWriter::with_capacity(self.buffer_capacity, writer),
             flexible: self.flexible,
             field_count: None,
             must_quote,

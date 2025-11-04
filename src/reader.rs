@@ -9,7 +9,7 @@ use crate::utils::{self, trim_bom};
 pub struct ReaderBuilder {
     delimiter: u8,
     quote: u8,
-    buffer_capacity: Option<usize>,
+    buffer_capacity: usize,
     flexible: bool,
     has_headers: bool,
 }
@@ -19,7 +19,7 @@ impl Default for ReaderBuilder {
         Self {
             delimiter: b',',
             quote: b'"',
-            buffer_capacity: None,
+            buffer_capacity: 8192,
             flexible: false,
             has_headers: true,
         }
@@ -48,7 +48,7 @@ impl ReaderBuilder {
     }
 
     pub fn buffer_capacity(&mut self, capacity: usize) -> &mut Self {
-        self.buffer_capacity = Some(capacity);
+        self.buffer_capacity = capacity;
         self
     }
 
@@ -62,16 +62,9 @@ impl ReaderBuilder {
         self
     }
 
-    fn bufreader<R: Read>(&self, reader: R) -> BufReaderWithPosition<R> {
-        match self.buffer_capacity {
-            None => BufReaderWithPosition::new(reader),
-            Some(capacity) => BufReaderWithPosition::with_capacity(capacity, reader),
-        }
-    }
-
     pub fn from_reader<R: Read>(&self, reader: R) -> Reader<R> {
         Reader {
-            buffer: self.bufreader(reader),
+            buffer: BufReaderWithPosition::with_capacity(self.buffer_capacity, reader),
             inner: CoreReader::new(self.delimiter, self.quote),
             flexible: self.flexible,
             headers: ByteRecord::new(),
@@ -105,7 +98,7 @@ impl ReaderBuilder {
         let reverse_io_reader = utils::ReverseReader::new(reader, file_len, offset);
 
         Ok(ReverseReader {
-            buffer: self.bufreader(reverse_io_reader).into_inner(),
+            buffer: BufReader::with_capacity(self.buffer_capacity, reverse_io_reader),
             inner: CoreReader::new(self.delimiter, self.quote),
             flexible: self.flexible,
             headers,

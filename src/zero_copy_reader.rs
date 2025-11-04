@@ -4,13 +4,14 @@ use crate::buffer::ScratchBuffer;
 use crate::core::{CoreReader, ReadResult};
 use crate::error::{self, Error, ErrorKind};
 use crate::records::{ByteRecord, ZeroCopyByteRecord};
+use crate::splitter::SplitterBuilder;
 use crate::utils::trim_bom;
 
 #[derive(Clone)]
 pub struct ZeroCopyReaderBuilder {
     delimiter: u8,
     quote: u8,
-    buffer_capacity: Option<usize>,
+    buffer_capacity: usize,
     flexible: bool,
     has_headers: bool,
 }
@@ -20,7 +21,7 @@ impl Default for ZeroCopyReaderBuilder {
         Self {
             delimiter: b',',
             quote: b'"',
-            buffer_capacity: None,
+            buffer_capacity: 8192,
             flexible: false,
             has_headers: true,
         }
@@ -49,7 +50,7 @@ impl ZeroCopyReaderBuilder {
     }
 
     pub fn buffer_capacity(&mut self, capacity: usize) -> &mut Self {
-        self.buffer_capacity = Some(capacity);
+        self.buffer_capacity = capacity;
         self
     }
 
@@ -63,9 +64,21 @@ impl ZeroCopyReaderBuilder {
         self
     }
 
+    pub fn to_splitter_builder(&self) -> SplitterBuilder {
+        let mut splitter_builder = SplitterBuilder::new();
+
+        splitter_builder
+            .buffer_capacity(self.buffer_capacity)
+            .has_headers(self.has_headers)
+            .quote(self.quote)
+            .delimiter(self.delimiter);
+
+        splitter_builder
+    }
+
     pub fn from_reader<R: Read>(&self, reader: R) -> ZeroCopyReader<R> {
         ZeroCopyReader {
-            buffer: ScratchBuffer::with_optional_capacity(self.buffer_capacity, reader),
+            buffer: ScratchBuffer::with_capacity(self.buffer_capacity, reader),
             inner: CoreReader::new(self.delimiter, self.quote),
             byte_headers: ByteRecord::new(),
             raw_headers: (Vec::new(), Vec::new()),
