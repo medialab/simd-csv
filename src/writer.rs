@@ -275,6 +275,14 @@ impl<W: Write> Writer<W> {
         }
     }
 
+    #[inline(always)]
+    pub fn write_splitted_record(&mut self, record: &[u8]) -> error::Result<()> {
+        self.buffer.write_all(record)?;
+        self.buffer.write_all(b"\n")?;
+
+        Ok(())
+    }
+
     #[inline]
     pub fn into_inner(self) -> Result<W, IntoInnerError<BufWriter<W>>> {
         self.buffer.into_inner()
