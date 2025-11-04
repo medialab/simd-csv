@@ -3,7 +3,7 @@ use std::io::{self, BufWriter, IntoInnerError, Write};
 use memchr::memchr;
 
 use crate::error::{self, Error, ErrorKind};
-use crate::records::ByteRecord;
+use crate::records::{ByteRecord, ZeroCopyByteRecord};
 
 pub struct WriterBuilder {
     delimiter: u8,
@@ -268,6 +268,18 @@ impl<W: Write> Writer<W> {
     #[inline(always)]
     pub fn write_byte_record(&mut self, record: &ByteRecord) -> error::Result<()> {
         self.write_record(record.iter())
+    }
+
+    #[inline]
+    pub fn write_zero_copy_byte_record(
+        &mut self,
+        record: &ZeroCopyByteRecord,
+    ) -> error::Result<()> {
+        if record.quote == self.quote {
+            self.write_record_no_quoting(record.iter())
+        } else {
+            self.write_record(record.unescaped_iter())
+        }
     }
 
     #[inline]

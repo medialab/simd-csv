@@ -9,7 +9,7 @@ use crate::utils::{trim_trailing_crlf, unescape, unescape_to, unquoted};
 pub struct ZeroCopyByteRecord<'a> {
     slice: &'a [u8],
     seps: &'a [usize],
-    quote: u8,
+    pub(crate) quote: u8,
 }
 
 impl<'a> ZeroCopyByteRecord<'a> {
