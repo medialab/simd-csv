@@ -12,8 +12,8 @@ struct SeekerSample {
     record_count: u64,
     max_record_size: u64,
     median_record_size: u64,
-    initial_pos: u64,
-    first_record_pos: u64,
+    initial_position: u64,
+    first_record_position: u64,
     fields_mean_sizes: Vec<f64>,
     file_len: u64,
     has_reached_eof: bool,
@@ -28,16 +28,16 @@ impl SeekerSample {
         // NOTE: the given reader might have already read.
         // This is for instance the case for CSV-adjacent formats boasting
         // metadata in a header before tabular records even start.
-        let initial_pos = reader.stream_position()?;
+        let initial_position = reader.stream_position()?;
 
         let mut csv_reader = csv_reader_builder.from_reader(&mut reader);
 
         let headers = csv_reader.byte_headers()?.clone();
 
-        let first_record_pos = if csv_reader.has_headers() {
-            initial_pos + csv_reader.position()
+        let first_record_position = if csv_reader.has_headers() {
+            initial_position + csv_reader.position()
         } else {
-            initial_pos
+            initial_position
         };
 
         let mut i: u64 = 0;
@@ -79,8 +79,8 @@ impl SeekerSample {
             record_count: i,
             max_record_size: *record_sizes.last().unwrap(),
             median_record_size: record_sizes[record_sizes.len() / 2],
-            initial_pos,
-            first_record_pos,
+            initial_position,
+            first_record_position,
             fields_mean_sizes,
             has_reached_eof,
             file_len,
@@ -245,8 +245,12 @@ impl<R: Read + Seek> Seeker<R> {
         self.has_headers
     }
 
-    pub fn first_record_pos(&self) -> u64 {
-        self.sample.first_record_pos
+    pub fn initial_position(&self) -> u64 {
+        self.sample.initial_position
+    }
+
+    pub fn first_record_position(&self) -> u64 {
+        self.sample.first_record_position
     }
 
     pub fn file_len(&self) -> u64 {
@@ -267,16 +271,17 @@ impl<R: Read + Seek> Seeker<R> {
         if sample.has_reached_eof {
             sample.record_count
         } else {
-            ((sample.file_len - sample.first_record_pos) as f64 / sample.median_record_size as f64)
+            ((sample.file_len - sample.first_record_position) as f64
+                / sample.median_record_size as f64)
                 .ceil() as u64
         }
     }
 
     pub fn seek(&mut self, from_pos: u64) -> error::Result<Option<(u64, ByteRecord)>> {
-        if from_pos < self.first_record_pos() || from_pos >= self.sample.file_len {
+        if from_pos < self.first_record_position() || from_pos >= self.sample.file_len {
             return Err(Error::new(ErrorKind::OutOfBounds {
                 pos: from_pos,
-                start: self.first_record_pos(),
+                start: self.first_record_position(),
                 end: self.sample.file_len,
             }));
         }
@@ -284,7 +289,7 @@ impl<R: Read + Seek> Seeker<R> {
         self.inner.seek(SeekFrom::Start(from_pos))?;
 
         // NOTE: first record does not need to be more complex
-        if from_pos == self.first_record_pos() {
+        if from_pos == self.first_record_position() {
             let first_record = self
                 .builder
                 .from_reader(&mut self.inner)
@@ -292,7 +297,7 @@ impl<R: Read + Seek> Seeker<R> {
                 .unwrap()
                 .to_byte_record();
 
-            return Ok(Some((self.first_record_pos(), first_record)));
+            return Ok(Some((self.first_record_position(), first_record)));
         }
 
         self.scratch.clear();
@@ -349,10 +354,10 @@ impl<R: Read + Seek> Seeker<R> {
 
         // File is way too short
         if self.sample.record_count < count as u64 {
-            return Ok(vec![(self.first_record_pos(), file_len)]);
+            return Ok(vec![(self.first_record_position(), file_len)]);
         }
 
-        let adjusted_file_len = file_len - self.first_record_pos();
+        let adjusted_file_len = file_len - self.first_record_position();
 
         // Adjusting chunks
         let count = count
@@ -362,11 +367,11 @@ impl<R: Read + Seek> Seeker<R> {
             )
             .max(1);
 
-        let mut offsets = vec![self.first_record_pos()];
+        let mut offsets = vec![self.first_record_position()];
 
         for i in 1..count {
             let file_offset = ((i as f64 / count as f64) * adjusted_file_len as f64).floor() as u64
-                + self.first_record_pos();
+                + self.first_record_position();
 
             if let Some((record_offset, _)) = self.seek(file_offset)? {
                 offsets.push(record_offset);
@@ -385,7 +390,7 @@ impl<R: Read + Seek> Seeker<R> {
     }
 
     pub fn first_byte_record(&mut self) -> error::Result<Option<ByteRecord>> {
-        match self.seek(self.first_record_pos()) {
+        match self.seek(self.first_record_position()) {
             Ok(Some((_, record))) => Ok(Some(record)),
             Ok(None) => Ok(None),
             Err(err) => Err(err),
@@ -396,7 +401,7 @@ impl<R: Read + Seek> Seeker<R> {
         let reverse_reader = ReverseReader::new(
             &mut self.inner,
             self.sample.file_len,
-            self.sample.first_record_pos,
+            self.sample.first_record_position,
         );
 
         let mut reverse_csv_reader = self.builder.from_reader(reverse_reader);
@@ -411,14 +416,16 @@ impl<R: Read + Seek> Seeker<R> {
     }
 
     pub fn into_zero_copy_reader(mut self) -> error::Result<ZeroCopyReader<R>> {
-        self.inner.seek(SeekFrom::Start(self.sample.initial_pos))?;
+        self.inner
+            .seek(SeekFrom::Start(self.sample.initial_position))?;
         self.builder.has_headers(self.has_headers);
         self.builder.flexible(false);
         Ok(self.builder.from_reader(self.inner))
     }
 
     pub fn into_splitter(mut self) -> error::Result<Splitter<R>> {
-        self.inner.seek(SeekFrom::Start(self.sample.initial_pos))?;
+        self.inner
+            .seek(SeekFrom::Start(self.sample.initial_position))?;
         self.builder.has_headers(self.has_headers);
         Ok(self.builder.to_splitter_builder().from_reader(self.inner))
     }
