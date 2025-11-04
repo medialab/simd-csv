@@ -2,6 +2,7 @@ use std::io::{Cursor, Read, Seek, SeekFrom};
 
 use crate::error::{self, Error, ErrorKind};
 use crate::records::ByteRecord;
+use crate::splitter::Splitter;
 use crate::utils::ReverseReader;
 use crate::zero_copy_reader::{ZeroCopyReader, ZeroCopyReaderBuilder};
 
@@ -405,6 +406,14 @@ impl<R: Read + Seek> Seeker<R> {
 
     pub fn into_zero_copy_reader(mut self) -> error::Result<ZeroCopyReader<R>> {
         self.inner.seek(SeekFrom::Start(self.sample.initial_pos))?;
+        self.builder.has_headers(true);
+        self.builder.flexible(false);
         Ok(self.builder.from_reader(self.inner))
+    }
+
+    pub fn into_splitter(mut self) -> error::Result<Splitter<R>> {
+        self.inner.seek(SeekFrom::Start(self.sample.initial_pos))?;
+        self.builder.has_headers(true);
+        Ok(self.builder.to_splitter_builder().from_reader(self.inner))
     }
 }
