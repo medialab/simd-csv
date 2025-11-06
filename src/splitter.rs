@@ -200,8 +200,11 @@ impl<R: Read> Splitter<R> {
         }
     }
 
-    pub fn into_bufreader(self) -> BufReader<R> {
-        self.buffer.into_bufreader()
+    pub fn into_bufreader(self) -> (Option<Vec<u8>>, BufReader<R>) {
+        (
+            self.must_reemit_headers.then_some(self.headers),
+            self.buffer.into_bufreader(),
+        )
     }
 
     #[inline(always)]

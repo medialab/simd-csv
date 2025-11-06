@@ -231,8 +231,11 @@ impl<R: Read> ZeroCopyReader<R> {
         self.read_byte_record_impl()
     }
 
-    pub fn into_bufreader(self) -> BufReader<R> {
-        self.buffer.into_bufreader()
+    pub fn into_bufreader(self) -> (Option<ByteRecord>, BufReader<R>) {
+        (
+            self.must_reemit_headers.then_some(self.byte_headers),
+            self.buffer.into_bufreader(),
+        )
     }
 
     #[inline(always)]

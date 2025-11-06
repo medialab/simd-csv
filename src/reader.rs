@@ -251,8 +251,11 @@ impl<R: Read> Reader<R> {
         self.buffer.into_inner().into_inner()
     }
 
-    pub fn into_bufreader(self) -> BufReader<R> {
-        self.buffer.into_inner()
+    pub fn into_bufreader(self) -> (Option<ByteRecord>, BufReader<R>) {
+        (
+            self.must_reemit_headers.then_some(self.headers),
+            self.buffer.into_inner(),
+        )
     }
 
     #[inline(always)]
