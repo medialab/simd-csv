@@ -246,16 +246,24 @@ impl<R: Read + Seek> Seeker<R> {
         self.has_headers
     }
 
+    #[inline(always)]
     pub fn initial_position(&self) -> u64 {
         self.sample.initial_position
     }
 
+    #[inline(always)]
     pub fn first_record_position(&self) -> u64 {
         self.sample.first_record_position
     }
 
+    #[inline(always)]
     pub fn file_len(&self) -> u64 {
         self.sample.file_len
+    }
+
+    #[inline(always)]
+    pub fn lookahead_len(&self) -> u64 {
+        self.lookahead_factor * self.sample.max_record_size
     }
 
     #[inline(always)]
