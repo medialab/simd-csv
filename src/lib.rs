@@ -3,15 +3,70 @@ The `simd-csv` crate provides specialized readers & writers of CSV data able
 to leverage [SIMD](https://en.wikipedia.org/wiki/Single_instruction,_multiple_data) instructions.
 
 It has been designed to fit the [xan](https://github.com/medialab/xan) command line tool's
-requirements, but can be used by anyone to speed up CSV parsing if needed.
+requirements, but can be used by anyone to speed up CSV parsing.
 
-Is is less flexible and user-friendly than the [`csv`](https://docs.rs/csv/) crate
+Is is less flexible and user-friendly than the [`csv`](https://docs.rs/csv/) crate,
 so one should make sure the performance gain is worth it before going further.
 
 This crate is not a port of [simdjson](https://arxiv.org/abs/1902.08318) branchless logic
 applied to CSV parsing. It uses a somewhat novel approach instead, mixing traditional state
 machine logic with [`memchr`](https://docs.rs/memchr/latest/memchr/)-like SIMD-accelerated
 string searching. See the [design notes](#design-notes) for more details.
+
+# Examples
+
+*Reading a CSV file while amortizing allocations*
+
+```
+use std::fs::File;
+use simd_csv::{Reader, ByteRecord};
+
+let mut reader = Reader::from_reader(File::open("data.csv")?);
+let mut record = ByteRecord::new();
+
+while reader.read_byte_record(&mut record)? {
+    for cell in record.iter() {
+        dbg!(cell);
+    }
+}
+```
+
+*Using a builder to configure your reader*
+
+```
+use std::fs::File;
+use simd_csv::ReaderBuilder;
+
+let mut reader = ReaderBuilder::new()
+    .delimiter(b'\t')
+    .buffer_capacity(16 * (1 << 10))
+    .from_reader(File::open("data.csv")?);
+```
+
+*Using the zero-copy reader*
+
+```
+use std::fs::File;
+use simd_csv::ZeroCopyReader;
+
+let mut reader = ZeroCopyReader::from_reader(File::new("data.csv")?);
+
+while let Some(record) = reader.read_byte_record()? {
+    // Only unescaping third column:
+    dbg!(record.unescape(2));
+}
+```
+
+*Counting records as fast as possible using the splitter*
+
+```
+use std::fs::File;
+use simd_csv::Splitter;
+
+let mut splitter = Splitter::from_reader(File::new("data.csv")?);
+
+println!("{}", splitter.count_records()?);
+```
 
 # Readers
 
@@ -27,7 +82,7 @@ find record delimitations, but not cell delimiters at all.
 
 You can also find more exotic readers like:
 
-- [`TotalReader`], [`TotalReaderBuilder`]: a reader optimized to work for uses-cases when
+- [`TotalReader`], [`TotalReaderBuilder`]: a reader optimized to work with uses-cases when
 CSV data is fully loaded into memory or with memory maps.
 - [`Seeker`], [`SeekerBuilder`]: a reader able to find record start positions in a seekable CSV stream.
 This can be very useful for parallelization, or more creative uses like performing binary
@@ -40,6 +95,13 @@ search in a sorted file.
 
 # Supported targets
 
+- On `x86_64` targets, `sse2` instructions are used. `avx2` instructions
+will also be used if their availability is detected at runtime.
+- On `aarch64` targets, `neon` instructions are used.
+- On `wasm` targets, `simd128` instructions are used.
+- Everywhere else, the library will fallback to [SWAR](https://en.wikipedia.org/wiki/SWAR)
+techniques or scalar implementations.
+
 # Design notes
 
 Targeting streaming parsers, minimally quoted data
@@ -48,7 +110,72 @@ reasonably fast, depend on the data
 
 # Caveats
 
-CRLF, quoting issues
+## "Nonsensical" CSV data
+
+To remain as fast as possible, "nonsensical" CSV data is handled by this
+crate differently than it might traditionally be done.
+
+For instance, this crate's CSV parser has no concept of "beginning of field",
+which means opening quotes in the middle of a field might corrupt the output.
+(I would say this is immoral to do so in the first place but traditional parsers
+tend to deal with this case more graciously).
+
+For instance, given the following CSV data:
+
+```txt
+name,surname\njoh"n,landis\nbéatrice,babka
+```
+
+Cautious parsers would produce the following result:
+
+| name     | surname |
+| -------- | ------- |
+| joh"n    | landis  |
+| béatrice | babka   |
+
+While this crate's parser would produce the following unaligned result:
+
+| name                         | surname |
+| ---------------------------- | ------- |
+| joh"n,landis\nbéatrice,babka | \<eof\> |
+
+Keep also in mind that fields opening and closing quotes multiple
+times might lose some characters here & there (especially whitespace) because
+the parser's state machine is not geared towards this at all.
+
+Rest assured that morally valid & sensical CSV data will still be parsed
+correctly ;)
+
+## Regarding line terminators
+
+To avoid needless branching and SIMD overhead, this crate's CSV parser
+expect line terminators to be either CRLF or single LF, but not single CR.
+
+Also, to avoid state machine overhead related to CRLF at buffer boundaries
+when streaming and to make sure we skip empty lines of the file (we
+don't parse them as empty records),
+one edge case has been deemed an acceptable loss: leading CR characters
+will be trimmed from the beginning of records.
+
+For instance, given the following CSV data:
+
+```txt
+name,surname\n\rjohn,landis\r\nbéatrice,babka
+```
+
+A morally correct parser recognizing CRLF or LF line terminators should return:
+
+| name     | surname |
+| -------- | ------- |
+| \rjohn   | landis  |
+| béatrice | babka   |
+
+While the hereby crate will return:
+
+| name     | surname |
+| -------- | ------- |
+| john     | landis  |
+| béatrice | babka   |
 
 */
 mod buffer;
