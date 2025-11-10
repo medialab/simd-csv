@@ -539,23 +539,6 @@ impl<'r> ByteRecordBuilder<'r> {
     }
 }
 
-#[macro_export]
-macro_rules! brec {
-    () => {{
-        ByteRecord::new()
-    }};
-
-    ($($x: expr),*) => {{
-        let mut r = ByteRecord::new();
-
-        $(
-            r.push_field($x.as_bytes());
-        )*
-
-        r
-    }};
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;

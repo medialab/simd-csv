@@ -73,20 +73,20 @@ println!("{}", splitter.count_records()?);
 From least to most performant. Also from most integrated to most barebone.
 
 - [`Reader`], [`ReaderBuilder`]: a streaming copy reader, unescaping quoted data on the fly.
-This is the closest thing you will find to the [`csv`](https://docs.rs/csv/) crate `Reader`.
+  This is the closest thing you will find to the [`csv`](https://docs.rs/csv/) crate `Reader`.
 - [`ZeroCopyReader`], [`ZeroCopyReaderBuilder`]: a streaming zero-copy reader that only find cell
-delimiters and does not unescape quoted data.
+  delimiters and does not unescape quoted data.
 - [`Splitter`], [`SplitterBuilder`]: a streaming zero-copy splitter that will only
-find record delimitations, but not cell delimiters at all.
+  find record delimitations, but not cell delimiters at all.
 - [`LineReader`]: a streaming zero-copy line splitter that does not handle quoting at all.
 
 You can also find more exotic readers like:
 
 - [`TotalReader`], [`TotalReaderBuilder`]: a reader optimized to work with uses-cases when
-CSV data is fully loaded into memory or with memory maps.
+  CSV data is fully loaded into memory or with memory maps.
 - [`Seeker`], [`SeekerBuilder`]: a reader able to find record start positions in a seekable CSV stream.
-This can be very useful for parallelization, or more creative uses like performing binary
-search in a sorted file.
+  This can be very useful for parallelization, or more creative uses like performing binary
+  search in a sorted file.
 - [`ReverseReader`], [`ReaderBuilder`]: a reader able to read a seekable CSV stream in reverse, in amortized linear time.
 
 # Writers
@@ -96,11 +96,11 @@ search in a sorted file.
 # Supported targets
 
 - On `x86_64` targets, `sse2` instructions are used. `avx2` instructions
-will also be used if their availability is detected at runtime.
+  will also be used if their availability is detected at runtime.
 - On `aarch64` targets, `neon` instructions are used.
 - On `wasm` targets, `simd128` instructions are used.
 - Everywhere else, the library will fallback to [SWAR](https://en.wikipedia.org/wiki/SWAR)
-techniques or scalar implementations.
+  techniques or scalar implementations.
 
 # Design notes
 
@@ -229,6 +229,23 @@ While the hereby crate returns:
 | béatrice | babka   |
 
 */
+#[allow(unused_macros)]
+macro_rules! brec {
+    () => {{
+        $crate::records::ByteRecord::new()
+    }};
+
+    ($($x: expr),*) => {{
+        let mut r = $crate::records::ByteRecord::new();
+
+        $(
+            r.push_field($x.as_bytes());
+        )*
+
+        r
+    }};
+}
+
 mod buffer;
 mod core;
 mod debug;

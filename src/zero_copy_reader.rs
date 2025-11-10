@@ -252,8 +252,6 @@ impl<R: Read> ZeroCopyReader<R> {
 mod tests {
     use std::io::Cursor;
 
-    use crate::brec;
-
     use super::*;
 
     impl<R: Read> ZeroCopyReader<R> {

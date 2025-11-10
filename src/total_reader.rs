@@ -212,8 +212,6 @@ impl Iterator for ByteRecordsIter<'_, '_> {
 mod tests {
     use super::*;
 
-    use crate::brec;
-
     impl<'b> TotalReader<'b> {
         fn from_bytes_no_headers(bytes: &'b [u8]) -> Self {
             TotalReaderBuilder::new()

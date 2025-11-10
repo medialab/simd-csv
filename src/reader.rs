@@ -430,8 +430,6 @@ impl<R: Read + Seek> Iterator for ReverseByteRecordsIntoIter<R> {
 mod tests {
     use std::io::Cursor;
 
-    use crate::brec;
-
     use super::*;
 
     impl<R: Read> Reader<R> {

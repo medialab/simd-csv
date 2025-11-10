@@ -295,8 +295,6 @@ mod tests {
 
     use super::*;
 
-    use crate::brec;
-
     #[test]
     fn test_write_byte_record() -> io::Result<()> {
         let output = Cursor::new(Vec::<u8>::new());
