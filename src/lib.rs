@@ -104,9 +104,60 @@ techniques or scalar implementations.
 
 # Design notes
 
-Targeting streaming parsers, minimally quoted data
+## Regarding performance
 
-reasonably fast, depend on the data
+This crate's CSV parser has been cautiously designed to offer "reasonable" performance
+by combinining traditional state machine logic with SIMD-accelerated string searching.
+
+I say "reasonable" because you cannot expect to go 16/32 times faster than a state-of-the-art
+scalar implementation like the [`csv`](https://docs.rs/csv/) crate. What's more, the
+throughput of the SIMD-accelerated parser remains very data-dependent. Sometimes
+you will go up to ~8 times faster, sometimes you will only go as fast as scalar code.
+
+As a rule of thumb, the larger your records and cells, the greater the
+performance boost vs. a scalar byte-by-byte implementation. This also means that
+for worst cases, this crate's parser will just be on par with scalar code, but I
+have made everything in my power to ensure this SIMD parser is never slower (I think
+one of the reasons why SIMD CSV parsers are not yet very prevalent is that they
+tend to suffer real-life cases where scalar code outperform them).
+
+Also, note that this crate is geared towards parsing streams of CSV data that is
+only quoted when needed (e.g. not written with a `QUOTE_ALWAYS` policy).
+
+## Regarding simdjson techniques
+
+I have tried very hard to apply [simdjson](https://arxiv.org/abs/1902.08318) tricks
+to make this crate's parser as branchless as possible but I couldn't make it as
+fast as the state-machine/SIMD string searching hybrid.
+
+`PCLMULQDQ` tricks in this context only adds more complexity and overhead to the
+SIMD sections of the code, all while making it less "democratic" since you need
+specific SIMD instructions that are not available everywhere.
+
+Said differently, those techniques seem overkill in practice for CSV parsing.
+But it is also possible I am not competent enough to make them work properly and
+I won't hesitate to move towards them if I am proven wrong.
+
+## Hybrid design
+
+This crate's CSV parser follows a hybrid approach where we maintain a traditional
+state machine, but search for structural characters in the byte stream using
+SIMD string searching techniques like the ones implemented in the excellent
+[`memchr`](https://docs.rs/memchr/latest/memchr/) crate:
+
+The idea is to compare 16/32 bytes of data at once with splats of structural
+characters like `\n`, `"` or `,` in order to extract a "move mask" that will
+be handled as a bit string so we can find whether and where some character
+was found using typical bit-twiddling.
+
+This ultimately means that branching happens on each structural characters rather
+than on each byte, which is very good. But this is also the reason why CSV data
+with a very high density of structural characters will not get parsed that much
+faster than using scalar code only.
+
+## Two-speed SIMD branches
+
+## Copy amortization
 
 # Caveats
 
@@ -170,7 +221,7 @@ A morally correct parser recognizing CRLF or LF line terminators should return:
 | \rjohn   | landis  |
 | béatrice | babka   |
 
-While the hereby crate will return:
+While the hereby crate returns:
 
 | name     | surname |
 | -------- | ------- |
