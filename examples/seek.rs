@@ -50,7 +50,7 @@ fn main() -> anyhow::Result<()> {
         .unwrap();
 
     if let Some(offset) = args.offset {
-        dbg!(seeker.seek(offset)?);
+        dbg!(seeker.find_record_after(offset)?);
     } else if args.approx_count {
         println!("{}", seeker.approx_count());
     } else if args.last {

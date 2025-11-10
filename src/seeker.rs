@@ -322,7 +322,7 @@ impl<R: Read + Seek> Seeker<R> {
     /// read ahead of the stream to test its heuristics.
     ///
     /// ```
-    /// match seeker.seek(1024) {
+    /// match seeker.find_record_after(1024) {
     ///     Ok(Some((pos, record))) => {
     ///         // Everything went fine
     ///     },
@@ -334,7 +334,7 @@ impl<R: Read + Seek> Seeker<R> {
     ///     }
     /// }
     /// ```
-    pub fn seek(&mut self, from_pos: u64) -> error::Result<Option<(u64, ByteRecord)>> {
+    pub fn find_record_after(&mut self, from_pos: u64) -> error::Result<Option<(u64, ByteRecord)>> {
         if from_pos < self.first_record_position() || from_pos >= self.sample.stream_len {
             return Err(Error::new(ErrorKind::OutOfBounds {
                 pos: from_pos,
@@ -434,7 +434,7 @@ impl<R: Read + Seek> Seeker<R> {
             let file_offset = ((i as f64 / count as f64) * adjusted_file_len as f64).floor() as u64
                 + self.first_record_position();
 
-            if let Some((record_offset, _)) = self.seek(file_offset)? {
+            if let Some((record_offset, _)) = self.find_record_after(file_offset)? {
                 offsets.push(record_offset);
             } else {
                 break;
@@ -454,8 +454,11 @@ impl<R: Read + Seek> Seeker<R> {
 
     /// Attempt to read the first record of the seekable stream.
     pub fn first_byte_record(&mut self) -> error::Result<Option<ByteRecord>> {
-        match self.seek(self.first_record_position()) {
-            Ok(Some((_, record))) => Ok(Some(record)),
+        self.inner
+            .seek(SeekFrom::Start(self.first_record_position()))?;
+
+        match self.builder.from_reader(&mut self.inner).read_byte_record() {
+            Ok(Some(record)) => Ok(Some(record.to_byte_record())),
             Ok(None) => Ok(None),
             Err(err) => Err(err),
         }
