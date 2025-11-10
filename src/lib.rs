@@ -168,13 +168,13 @@ than with the equivalent scalar code.
 This crate's CSV parser actually uses two different modes of SIMD string searching:
 
 1. when reading unquoted CSV data, the parser uses an amortized variant of the
-[`memchr`](https://docs.rs/memchr/latest/memchr/) routines where move masks
-containing more than a single match are kept and consumed progressively on subsequent calls,
-instead of restarting a search from the character just next to an earlier match, as the
-`memchr_iter` routine does.
+   [`memchr`](https://docs.rs/memchr/latest/memchr/) routines where move masks
+   containing more than a single match are kept and consumed progressively on subsequent calls,
+   instead of restarting a search from the character just next to an earlier match, as the
+   `memchr_iter` routine does.
 2. when reading quoted CSV data, the parser uses the optmized & unrolled functions
-of the [`memchr`](https://docs.rs/memchr/latest/memchr/) crate directly to find the next
-quote as fast as possible.
+   of the [`memchr`](https://docs.rs/memchr/latest/memchr/) crate directly to find the next
+   quote as fast as possible.
 
 This might seem weird but this seems to be the best tradeoff for performance. Counter-intuitively,
 using larger SIMD registers like `avx2` for 1. actually hurts the overall performance.

@@ -167,6 +167,8 @@ impl<R: Read> ZeroCopyReader<R> {
         Ok(&self.byte_headers)
     }
 
+    /// Returns whether this reader has been configured to interpret the first
+    /// record as a header.
     #[inline]
     pub fn has_headers(&self) -> bool {
         self.has_headers

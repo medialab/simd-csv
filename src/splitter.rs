@@ -81,6 +81,8 @@ impl<R: Read> Splitter<R> {
         SplitterBuilder::new().from_reader(reader)
     }
 
+    /// Returns whether this reader has been configured to interpret the first
+    /// record as a header.
     pub fn has_headers(&self) -> bool {
         self.has_headers
     }

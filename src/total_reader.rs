@@ -89,6 +89,8 @@ impl<'b> TotalReader<'b> {
         self.has_read = true;
     }
 
+    /// Returns whether this reader has been configured to interpret the first
+    /// record as a header.
     #[inline]
     pub fn byte_headers(&mut self) -> &ByteRecord {
         self.on_first_read();

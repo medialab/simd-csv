@@ -106,6 +106,13 @@ impl ReaderBuilder {
     }
 }
 
+/// An already configured copying/unescaping CSV reader.
+///
+/// # Configuration
+///
+/// To configure a [`Reader`], if you need a custom delimiter for instance of if
+/// you want to tweak the size of the inner buffer. Check out the
+/// [`ReaderBuilder`].
 pub struct Reader<R> {
     buffer: BufReaderWithPosition<R>,
     inner: CoreReader,
@@ -118,6 +125,8 @@ pub struct Reader<R> {
 }
 
 impl<R: Read> Reader<R> {
+    /// Create a new reader with default configuration using the provided reader
+    /// implementing [`std::io::Read`].
     pub fn from_reader(reader: R) -> Self {
         ReaderBuilder::new().from_reader(reader)
     }
@@ -200,6 +209,8 @@ impl<R: Read> Reader<R> {
         Ok(())
     }
 
+    /// Returns whether this reader has been configured to interpret the first
+    /// record as a header.
     #[inline]
     pub fn has_headers(&self) -> bool {
         self.has_headers
@@ -258,6 +269,7 @@ impl<R: Read> Reader<R> {
         )
     }
 
+    /// Returns the current byte offset of the reader in the wrapped stream.
     #[inline(always)]
     pub fn position(&self) -> u64 {
         if self.must_reemit_headers {
