@@ -485,22 +485,35 @@ impl<R: Read + Seek> Seeker<R> {
         self.inner
     }
 
-    /// Transform the seeker into a [`ZeroCopyReader`]. Underlying reader will
-    /// be correctly reset to the stream initial position beforehand.
-    pub fn into_zero_copy_reader(mut self) -> error::Result<ZeroCopyReader<R>> {
-        self.inner
-            .seek(SeekFrom::Start(self.sample.initial_position))?;
+    fn into_zero_copy_reader_from_position(
+        mut self,
+        pos: SeekFrom,
+    ) -> error::Result<ZeroCopyReader<R>> {
+        self.inner.seek(pos)?;
         self.builder.has_headers(self.has_headers);
         self.builder.flexible(false);
+
         Ok(self.builder.from_reader(self.inner))
+    }
+
+    /// Transform the seeker into a [`ZeroCopyReader`]. Underlying reader will
+    /// be correctly reset to the stream initial position beforehand.
+    pub fn into_zero_copy_reader(self) -> error::Result<ZeroCopyReader<R>> {
+        let pos = SeekFrom::Start(self.sample.initial_position);
+        self.into_zero_copy_reader_from_position(pos)
+    }
+
+    fn into_splitter_from_position(mut self, pos: SeekFrom) -> error::Result<Splitter<R>> {
+        self.inner.seek(pos)?;
+        self.builder.has_headers(self.has_headers);
+
+        Ok(self.builder.to_splitter_builder().from_reader(self.inner))
     }
 
     /// Transform the seeker into a [`Splitter`]. Underlying reader will
     /// be correctly reset to the stream initial position beforehand.
-    pub fn into_splitter(mut self) -> error::Result<Splitter<R>> {
-        self.inner
-            .seek(SeekFrom::Start(self.sample.initial_position))?;
-        self.builder.has_headers(self.has_headers);
-        Ok(self.builder.to_splitter_builder().from_reader(self.inner))
+    pub fn into_splitter(self) -> error::Result<Splitter<R>> {
+        let pos = SeekFrom::Start(self.sample.initial_position);
+        self.into_splitter_from_position(pos)
     }
 }
