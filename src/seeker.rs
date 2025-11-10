@@ -16,7 +16,7 @@ struct SeekerSample {
     initial_position: u64,
     first_record_position: u64,
     fields_mean_sizes: Vec<f64>,
-    file_len: u64,
+    stream_len: u64,
     has_reached_eof: bool,
 }
 
@@ -84,7 +84,7 @@ impl SeekerSample {
             first_record_position,
             fields_mean_sizes,
             has_reached_eof,
-            file_len,
+            stream_len: file_len,
         }))
     }
 }
@@ -242,35 +242,48 @@ pub struct Seeker<R> {
 }
 
 impl<R: Read + Seek> Seeker<R> {
+    /// Returns whether this seeker has been configured to interpret the first
+    /// record as a header.
     pub fn has_headers(&self) -> bool {
         self.has_headers
     }
 
+    /// Returns the position the seekable stream was in when instantiating the
+    /// seeker.
     #[inline(always)]
     pub fn initial_position(&self) -> u64 {
         self.sample.initial_position
     }
 
+    /// Returns the absolute byte offset of the first record (excluding header)
+    /// of the seekable stream.
     #[inline(always)]
     pub fn first_record_position(&self) -> u64 {
         self.sample.first_record_position
     }
 
+    /// Returns the total number of bytes contained in the seekable stream.
     #[inline(always)]
-    pub fn file_len(&self) -> u64 {
-        self.sample.file_len
+    pub fn stream_len(&self) -> u64 {
+        self.sample.stream_len
     }
 
+    /// Returns the number of bytes that will be read when performing a
+    /// lookahead in the seekable stream when using [`Seeker::seek`].
     #[inline(always)]
     pub fn lookahead_len(&self) -> u64 {
         self.lookahead_factor * self.sample.max_record_size
     }
 
+    /// Returns the `first_record_position..stream_len` range of the seeker.
     #[inline(always)]
     pub fn range(&self) -> Range<u64> {
-        self.sample.first_record_position..self.sample.file_len
+        self.sample.first_record_position..self.sample.stream_len
     }
 
+    /// Returns the exact number of records (header excluded) contained in the
+    /// seekable stream, if the initial sample built when instantiating the
+    /// seeker exhausted the whole stream.
     #[inline]
     pub fn exact_count(&self) -> Option<u64> {
         self.sample
@@ -278,6 +291,9 @@ impl<R: Read + Seek> Seeker<R> {
             .then_some(self.sample.record_count)
     }
 
+    /// Either returns the exact number of records (header excluded) contained
+    /// in the seekable stream or an approximation based on statistics sampled
+    /// from the beginning of the stream and the total stream length.
     #[inline]
     pub fn approx_count(&self) -> u64 {
         let sample = &self.sample;
@@ -285,18 +301,45 @@ impl<R: Read + Seek> Seeker<R> {
         if sample.has_reached_eof {
             sample.record_count
         } else {
-            ((sample.file_len - sample.first_record_position) as f64
+            ((sample.stream_len - sample.first_record_position) as f64
                 / sample.median_record_size as f64)
                 .ceil() as u64
         }
     }
 
+    /// Attempt to find the position, in the seekable stream, of the beginning
+    /// of the CSV record just after the one where `from_pos` would end in.
+    ///
+    /// Beware: if `from_pos` is the exact first byte of a CSV record, this
+    /// method will still return the position of next CSV record because it has
+    /// no way of knowing whether the byte just before `from_pos` is a newline.
+    ///
+    /// This method will return an error if given `from_pos` is out of bounds.
+    ///
+    /// This method will return `None` if it did not succeed in finding  the
+    /// next CSV record starting position. This can typically happen when
+    /// seeking too close to the end of the stream, since this method needs to
+    /// read ahead of the stream to test its heuristics.
+    ///
+    /// ```
+    /// match seeker.seek(1024) {
+    ///     Ok(Some((pos, record))) => {
+    ///         // Everything went fine
+    ///     },
+    ///     Ok(None) => {
+    ///         // Lookahead failed
+    ///     },
+    ///     Err(err) => {
+    ///         // Either `from_pos` was out-of-bounds, or some IO error occurred
+    ///     }
+    /// }
+    /// ```
     pub fn seek(&mut self, from_pos: u64) -> error::Result<Option<(u64, ByteRecord)>> {
-        if from_pos < self.first_record_position() || from_pos >= self.sample.file_len {
+        if from_pos < self.first_record_position() || from_pos >= self.sample.stream_len {
             return Err(Error::new(ErrorKind::OutOfBounds {
                 pos: from_pos,
                 start: self.first_record_position(),
-                end: self.sample.file_len,
+                end: self.sample.stream_len,
             }));
         }
 
@@ -362,9 +405,13 @@ impl<R: Read + Seek> Seeker<R> {
         }
     }
 
+    /// Split the seekable stream into a maximum of `count` segments.
+    ///
+    /// This method might return less than `count` segments if the stream
+    /// seems too small to safely return that many segments.
     pub fn segments(&mut self, count: usize) -> error::Result<Vec<(u64, u64)>> {
         let sample = &self.sample;
-        let file_len = sample.file_len;
+        let file_len = sample.stream_len;
 
         // File is way too short
         if self.sample.record_count < count as u64 {
@@ -399,10 +446,13 @@ impl<R: Read + Seek> Seeker<R> {
         Ok(offsets.windows(2).map(|w| (w[0], w[1])).collect())
     }
 
+    /// Returns the headers of the seekable stream, or just the first record the
+    /// seeker was configured thusly.
     pub fn byte_headers(&self) -> &ByteRecord {
         &self.sample.headers
     }
 
+    /// Attempt to read the first record of the seekable stream.
     pub fn first_byte_record(&mut self) -> error::Result<Option<ByteRecord>> {
         match self.seek(self.first_record_position()) {
             Ok(Some((_, record))) => Ok(Some(record)),
@@ -411,10 +461,12 @@ impl<R: Read + Seek> Seeker<R> {
         }
     }
 
+    /// Attempt to read the last record of the seekable stream by reading it in
+    /// reverse.
     pub fn last_byte_record(&mut self) -> error::Result<Option<ByteRecord>> {
         let reverse_reader = ReverseReader::new(
             &mut self.inner,
-            self.sample.file_len,
+            self.sample.stream_len,
             self.sample.first_record_position,
         );
 
@@ -425,10 +477,13 @@ impl<R: Read + Seek> Seeker<R> {
             .map(|record_opt| record_opt.map(|record| record.to_byte_record_in_reverse()))
     }
 
+    /// Returns the underlying reader without unwinding its position.
     pub fn into_inner(self) -> R {
         self.inner
     }
 
+    /// Transform the seeker into a [`ZeroCopyReader`]. Underlying reader will
+    /// be correctly reset to the stream initial position beforehand.
     pub fn into_zero_copy_reader(mut self) -> error::Result<ZeroCopyReader<R>> {
         self.inner
             .seek(SeekFrom::Start(self.sample.initial_position))?;
@@ -437,6 +492,8 @@ impl<R: Read + Seek> Seeker<R> {
         Ok(self.builder.from_reader(self.inner))
     }
 
+    /// Transform the seeker into a [`Splitter`]. Underlying reader will
+    /// be correctly reset to the stream initial position beforehand.
     pub fn into_splitter(mut self) -> error::Result<Splitter<R>> {
         self.inner
             .seek(SeekFrom::Start(self.sample.initial_position))?;
