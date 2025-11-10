@@ -1,5 +1,6 @@
 use std::{error, fmt, io, result};
 
+/// The specific type of an error.
 #[derive(Debug)]
 pub enum ErrorKind {
     Io(io::Error),
@@ -15,6 +16,7 @@ pub enum ErrorKind {
     },
 }
 
+/// An error occurring when reading/writing CSV data.
 #[derive(Debug)]
 pub struct Error(ErrorKind);
 
@@ -79,4 +81,5 @@ impl fmt::Display for Error {
     }
 }
 
+/// A type alias for `Result<T, simd_csv::Error>`.
 pub type Result<T> = result::Result<T, Error>;

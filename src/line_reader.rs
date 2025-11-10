@@ -5,6 +5,7 @@ use std::io::{self, BufReader, Read};
 use crate::buffer::ScratchBuffer;
 use crate::utils::trim_trailing_crlf;
 
+/// A zero-copy & optimized line reader.
 pub struct LineReader<R> {
     inner: ScratchBuffer<R>,
 }

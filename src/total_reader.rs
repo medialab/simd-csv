@@ -2,6 +2,7 @@ use crate::core::{CoreReader, ReadResult};
 use crate::records::{ByteRecord, ByteRecordBuilder};
 use crate::utils::trim_bom;
 
+/// Builds a [`TotalReader`] with given configuration.
 pub struct TotalReaderBuilder {
     delimiter: u8,
     quote: u8,
@@ -50,8 +51,14 @@ impl TotalReaderBuilder {
     }
 }
 
-// NOTE: a reader to be used when the whole data fits into memory or when using
-// memory maps.
+/// An already configured CSV reader working on a slice of bytes or on a memory
+/// map.
+///
+/// # Configuration
+///
+/// To configure a [`TotalReader`], if you need a custom delimiter for instance
+/// of if you want to tweak the size of the inner buffer. Check out the
+/// [`TotalReaderBuilder`].
 pub struct TotalReader<'b> {
     inner: CoreReader,
     bytes: &'b [u8],

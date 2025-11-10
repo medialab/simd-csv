@@ -6,6 +6,7 @@ use std::ops::Index;
 use crate::debug;
 use crate::utils::{trim_trailing_crlf, unescape, unescape_to, unquoted};
 
+/// A view of a CSV record into a [`ZeroCopyReader`](crate::ZeroCopyReader) buffer.
 pub struct ZeroCopyByteRecord<'a> {
     slice: &'a [u8],
     seps: &'a [usize],
@@ -27,6 +28,8 @@ impl<'a> ZeroCopyByteRecord<'a> {
         (self.seps.to_vec(), self.slice.to_vec())
     }
 
+    /// Number of fields of the record. Cannot be less than 1 since a CSV with no
+    /// columns does not make sense.
     #[inline(always)]
     pub fn len(&self) -> usize {
         // NOTE: an empty zero copy record cannot be constructed,
@@ -34,16 +37,22 @@ impl<'a> ZeroCopyByteRecord<'a> {
         self.seps.len() + 1
     }
 
+    /// Returns whether the record has no fields.
     #[inline(always)]
     pub fn is_empty(&self) -> bool {
         false
     }
 
+    /// Returns the underlying byte slice, delimiters and all.
     #[inline(always)]
     pub fn as_slice(&self) -> &[u8] {
         self.slice
     }
 
+    /// Returns an iterator over the record's fields, as-is.
+    ///
+    /// This means fields might or might not be quoted and
+    /// field bytes have not been unescaped at all.
     #[inline]
     pub fn iter(&self) -> ZeroCopyByteRecordIter<'_> {
         ZeroCopyByteRecordIter {
@@ -53,6 +62,9 @@ impl<'a> ZeroCopyByteRecord<'a> {
         }
     }
 
+    /// Returns an iterator over the record's fields, unquoted.
+    ///
+    /// See [`Self::unquote`] for more detail.
     #[inline]
     pub fn unquoted_iter(&self) -> ZeroCopyByteRecordUnquotedIter<'_> {
         ZeroCopyByteRecordUnquotedIter {
@@ -62,6 +74,9 @@ impl<'a> ZeroCopyByteRecord<'a> {
         }
     }
 
+    /// Returns an iterator over the record's fields, unescaped.
+    ///
+    /// See [`Self::unescape`] for more detail.
     #[inline]
     pub fn unescaped_iter(&self) -> ZeroCopyByteRecordUnescapedIter<'_> {
         ZeroCopyByteRecordUnescapedIter {
@@ -71,6 +86,11 @@ impl<'a> ZeroCopyByteRecord<'a> {
         }
     }
 
+    /// Returns the nth field of the zero copy byte record, if it is not
+    /// out-of-bounds.
+    ///
+    /// The field's bytes will be given as-is, quoted or unquoted, and won't be
+    /// unescaped at all.
     #[inline]
     pub fn get(&self, index: usize) -> Option<&[u8]> {
         let len = self.seps.len();
@@ -94,12 +114,30 @@ impl<'a> ZeroCopyByteRecord<'a> {
         Some(&self.slice[start..end])
     }
 
+    /// Returns the nth field of the zero copy byte record, if it is not
+    /// out-of-bounds.
+    ///
+    /// The field's bytes will be given unquoted (i.e. without surrounding
+    /// quotes), but not unescaped (i.e. doubled double quotes will still be
+    /// there).
+    ///
+    /// The overhead vs. [`Self::get`] is only constant (we trim a leading and
+    /// trailing quote if required).
     #[inline]
     pub fn unquote(&self, index: usize) -> Option<&[u8]> {
         self.get(index)
             .map(|cell| unquoted(cell, self.quote).unwrap_or(cell))
     }
 
+    /// Returns the nth field of the zero copy byte record, if it is not
+    /// out-of-bounds.
+    ///
+    /// The field's bytes will be completely unescaped.
+    ///
+    /// The overhead vs. [`Self::get`] is linear in the field's number of bytes.
+    ///
+    /// A [`Cow::Owned`] will be returned if the field actually needed
+    /// unescaping, else a [`Cow::Borrowed`] will be returned.
     #[inline]
     pub fn unescape(&self, index: usize) -> Option<Cow<[u8]>> {
         self.unquote(index).map(|cell| {
@@ -133,6 +171,7 @@ impl<'a> ZeroCopyByteRecord<'a> {
         }
     }
 
+    /// Converts the zero copy byte record into a proper, owned [`ByteRecord`].
     #[inline]
     pub fn to_byte_record(&self) -> ByteRecord {
         let mut record = ByteRecord::new();
@@ -233,6 +272,7 @@ impl Index<usize> for ZeroCopyByteRecord<'_> {
     }
 }
 
+/// An owned, unescaped representation of a CSV record.
 #[derive(Default, Clone, Eq)]
 pub struct ByteRecord {
     data: Vec<u8>,

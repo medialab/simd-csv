@@ -6,6 +6,7 @@ use crate::error::{self, Error, ErrorKind};
 use crate::records::{ByteRecord, ByteRecordBuilder};
 use crate::utils::{self, trim_bom};
 
+/// Builds a [`Reader`] with given configuration.
 pub struct ReaderBuilder {
     delimiter: u8,
     quote: u8,
@@ -320,6 +321,13 @@ impl<R: Read> Iterator for ByteRecordsIntoIter<R> {
     }
 }
 
+/// An already configured reverse CSV reader.
+///
+/// # Configuration
+///
+/// To configure a [`ReverseReader`], if you need a custom delimiter for instance of if
+/// you want to tweak the size of the inner buffer. Check out the
+/// [`ReaderBuilder`].
 pub struct ReverseReader<R> {
     inner: CoreReader,
     buffer: BufReader<utils::ReverseReader<R>>,

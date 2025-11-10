@@ -103,6 +103,7 @@ fn cosine(profile: &[f64], other: impl Iterator<Item = usize>) -> f64 {
     intersection / (self_norm * other_norm).sqrt()
 }
 
+/// Builds a [`Seeker`] with given configuration.
 pub struct SeekerBuilder {
     delimiter: u8,
     quote: u8,
@@ -232,6 +233,7 @@ fn lookahead<R: Read>(
     }
 }
 
+/// A specialized CSV stream seeker.
 pub struct Seeker<R> {
     inner: R,
     sample: SeekerSample,
@@ -269,7 +271,8 @@ impl<R: Read + Seek> Seeker<R> {
     }
 
     /// Returns the number of bytes that will be read when performing a
-    /// lookahead in the seekable stream when using [`Seeker::seek`].
+    /// lookahead in the seekable stream when using
+    /// [`Seeker::find_record_after`].
     #[inline(always)]
     pub fn lookahead_len(&self) -> u64 {
         self.lookahead_factor * self.sample.max_record_size

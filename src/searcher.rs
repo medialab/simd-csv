@@ -303,6 +303,28 @@ mod aarch64 {
     }
 }
 
+/// Returns the SIMD instructions set used by this crate's amortized
+/// `memchr`-like searcher.
+///
+/// Note that `memchr` routines, also used by this crate might use
+/// different instruction sets.
+pub fn searcher_simd_instructions() -> &'static str {
+    #[cfg(target_arch = "x86_64")]
+    {
+        "sse2"
+    }
+
+    #[cfg(target_arch = "aarch64")]
+    {
+        "neon"
+    }
+
+    #[cfg(not(any(target_arch = "x86_64", target_arch = "aarch64")))]
+    {
+        "none"
+    }
+}
+
 #[derive(Debug)]
 pub struct Searcher {
     #[cfg(target_arch = "x86_64")]
@@ -316,23 +338,6 @@ pub struct Searcher {
 }
 
 impl Searcher {
-    pub fn leveraged_simd_instructions() -> &'static str {
-        #[cfg(target_arch = "x86_64")]
-        {
-            "sse2"
-        }
-
-        #[cfg(target_arch = "aarch64")]
-        {
-            "neon"
-        }
-
-        #[cfg(not(any(target_arch = "x86_64", target_arch = "aarch64")))]
-        {
-            "none"
-        }
-    }
-
     #[inline(always)]
     pub fn new(n1: u8, n2: u8, n3: u8) -> Self {
         #[cfg(target_arch = "x86_64")]

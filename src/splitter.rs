@@ -5,6 +5,7 @@ use crate::core::{CoreReader, ReadResult};
 use crate::error;
 use crate::utils::{trim_bom, trim_trailing_crlf};
 
+/// Builds a [`Splitter`] with given configuration.
 pub struct SplitterBuilder {
     delimiter: u8,
     quote: u8,
@@ -66,6 +67,13 @@ impl SplitterBuilder {
     }
 }
 
+/// An already configured CSV record splitter.
+///
+/// # Configuration
+///
+/// To configure a [`Splitter`], if you need a custom delimiter for instance of if
+/// you want to tweak the size of the inner buffer. Check out the
+/// [`SplitterBuilder`].
 #[derive(Debug)]
 pub struct Splitter<R> {
     buffer: ScratchBuffer<R>,

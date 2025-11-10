@@ -5,6 +5,7 @@ use memchr::memchr;
 use crate::error::{self, Error, ErrorKind};
 use crate::records::{ByteRecord, ZeroCopyByteRecord};
 
+/// Builds a [`Writer`] with given configuration.
 pub struct WriterBuilder {
     delimiter: u8,
     quote: u8,
@@ -72,6 +73,13 @@ impl WriterBuilder {
     }
 }
 
+/// An already configured CSV writer.
+///
+/// # Configuration
+///
+/// To configure a [`Writer`], if you need a custom delimiter for instance of if
+/// you want to tweak the size of the inner buffer. Check out the
+/// [`WriterBuilder`].
 pub struct Writer<W: Write> {
     delimiter: u8,
     quote: u8,

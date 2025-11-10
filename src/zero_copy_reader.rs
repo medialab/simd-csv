@@ -7,6 +7,7 @@ use crate::records::{ByteRecord, ZeroCopyByteRecord};
 use crate::splitter::SplitterBuilder;
 use crate::utils::trim_bom;
 
+/// Builds a [`ZeroCopyReader`] with given configuration.
 #[derive(Clone)]
 pub struct ZeroCopyReaderBuilder {
     delimiter: u8,
@@ -92,6 +93,13 @@ impl ZeroCopyReaderBuilder {
     }
 }
 
+/// An already configured zero-copy CSV reader.
+///
+/// # Configuration
+///
+/// To configure a [`ZeroCopyReader`], if you need a custom delimiter for
+/// instance of if you want to tweak the size of the inner buffer. Check out the
+/// [`ZeroCopyReaderBuilder`].
 pub struct ZeroCopyReader<R> {
     buffer: ScratchBuffer<R>,
     inner: CoreReader,

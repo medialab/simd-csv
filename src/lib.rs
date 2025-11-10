@@ -309,7 +309,7 @@ pub use error::{Error, ErrorKind, Result};
 pub use line_reader::LineReader;
 pub use reader::{Reader, ReaderBuilder, ReverseReader};
 pub use records::{ByteRecord, ZeroCopyByteRecord};
-pub use searcher::Searcher;
+pub use searcher::searcher_simd_instructions;
 pub use seeker::{Seeker, SeekerBuilder};
 pub use splitter::{Splitter, SplitterBuilder};
 pub use total_reader::{TotalReader, TotalReaderBuilder};
