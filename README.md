@@ -58,7 +58,7 @@ let mut reader = ReaderBuilder::new()
 use std::fs::File;
 use simd_csv::ZeroCopyReader;
 
-let mut reader = ZeroCopyReader::from_reader(File::new("data.csv")?);
+let mut reader = ZeroCopyReader::from_reader(File::open("data.csv")?);
 
 while let Some(record) = reader.read_byte_record()? {
     // Only unescaping third column:
@@ -72,7 +72,7 @@ while let Some(record) = reader.read_byte_record()? {
 use std::fs::File;
 use simd_csv::Splitter;
 
-let mut splitter = Splitter::from_reader(File::new("data.csv")?);
+let mut splitter = Splitter::from_reader(File::open("data.csv")?);
 
 println!("{}", splitter.count_records()?);
 ```

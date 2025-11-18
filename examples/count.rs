@@ -171,7 +171,7 @@ fn main() -> anyhow::Result<()> {
         CountingMode::Lines => {
             let file = File::open(&args.path)?;
 
-            let mut reader = simd_csv::LineReader::new(file);
+            let mut reader = simd_csv::LineReader::from_reader(file);
 
             println!("{}", reader.count_lines()?);
         }

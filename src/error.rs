@@ -35,18 +35,21 @@ pub enum ErrorKind {
 pub struct Error(ErrorKind);
 
 impl Error {
-    pub fn new(kind: ErrorKind) -> Self {
+    pub(crate) fn new(kind: ErrorKind) -> Self {
         Self(kind)
     }
 
+    /// Return whether the wrapped error is a [`std::io::Error`].
     pub fn is_io_error(&self) -> bool {
         matches!(self.0, ErrorKind::Io(_))
     }
 
+    /// Return a reference to the underlying [`ErrorKind`].
     pub fn kind(&self) -> &ErrorKind {
         &self.0
     }
 
+    /// Unwraps the error into its underlying [`ErrorKind`].
     pub fn into_kind(self) -> ErrorKind {
         self.0
     }
