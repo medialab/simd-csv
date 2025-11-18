@@ -127,46 +127,74 @@ impl Default for SeekerBuilder {
 }
 
 impl SeekerBuilder {
+    /// Create a new [`SeekerBuilder`] with default configuration.
     pub fn new() -> Self {
         Self::default()
     }
 
+    /// Create a new [`SeekerBuilder`] with provided `capacity`.
     pub fn with_capacity(capacity: usize) -> Self {
         let mut reader = Self::default();
         reader.buffer_capacity(capacity);
         reader
     }
 
+    /// Set the delimiter to be used by the created [`Seeker`].
+    ///
+    /// This delimiter must be a single byte.
+    ///
+    /// Will default to a comma.
     pub fn delimiter(&mut self, delimiter: u8) -> &mut Self {
         self.delimiter = delimiter;
         self
     }
 
+    /// Set the quote char to be used by the created [`Seeker`].
+    ///
+    /// This char must be a single byte.
+    ///
+    /// Will default to a double quote.
     pub fn quote(&mut self, quote: u8) -> &mut Self {
         self.quote = quote;
         self
     }
 
+    /// Set the capacity of the created [`Seeker`]'s buffered reader.
     pub fn buffer_capacity(&mut self, capacity: usize) -> &mut Self {
         self.buffer_capacity = capacity;
         self
     }
 
+    /// Set the sample size of the seeker, i.e. the maximum number of records
+    /// the seeker will attempt to prebuffer to collect some useful statistics
+    /// about target CSV stream.
+    ///
+    /// Will default to `128`.
     pub fn sample_size(&mut self, size: u64) -> &mut Self {
         self.sample_size = size;
         self
     }
 
+    /// Set the lookahead factor of the seeker, i.e. an approximate number of
+    /// records the seeker will read ahead when calling
+    /// [`Seeker::find_record_after`].
+    ///
+    /// Will default to `32`.
     pub fn lookahead_factor(&mut self, factor: u64) -> &mut Self {
         self.lookahead_factor = factor;
         self
     }
 
+    /// Indicate whether first record must be understood as a header.
+    ///
+    /// Will default to `true`.
     pub fn has_headers(&mut self, yes: bool) -> &mut Self {
         self.has_headers = yes;
         self
     }
 
+    /// Create a new [`Seeker`] using the provided reader implementing
+    /// [`std::io::Read`].
     pub fn from_reader<R: Read + Seek>(&self, mut reader: R) -> error::Result<Option<Seeker<R>>> {
         let mut builder = ZeroCopyReaderBuilder::new();
 

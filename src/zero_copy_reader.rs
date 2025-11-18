@@ -30,41 +30,63 @@ impl Default for ZeroCopyReaderBuilder {
 }
 
 impl ZeroCopyReaderBuilder {
+    /// Create a new [`ZeroCopyReaderBuilder`] with default configuration.
     pub fn new() -> Self {
         Self::default()
     }
 
+    /// Create a new [`ZeroCopyReaderBuilder`] with provided `capacity`.
     pub fn with_capacity(capacity: usize) -> Self {
         let mut reader = Self::default();
         reader.buffer_capacity(capacity);
         reader
     }
 
+    /// Set the delimiter to be used by the created [`ZeroCopyReader`].
+    ///
+    /// This delimiter must be a single byte.
+    ///
+    /// Will default to a comma.
     pub fn delimiter(&mut self, delimiter: u8) -> &mut Self {
         self.delimiter = delimiter;
         self
     }
 
+    /// Set the quote char to be used by the created [`ZeroCopyReader`].
+    ///
+    /// This char must be a single byte.
+    ///
+    /// Will default to a double quote.
     pub fn quote(&mut self, quote: u8) -> &mut Self {
         self.quote = quote;
         self
     }
 
+    /// Set the capacity of the created [`ZeroCopyReader`]'s buffered reader.
     pub fn buffer_capacity(&mut self, capacity: usize) -> &mut Self {
         self.buffer_capacity = capacity;
         self
     }
 
+    /// Indicate whether the created [`ZeroCopyReader`] should be "flexible",
+    /// i.e. whether it should allow reading records having different number of
+    /// fields than the first one.
+    ///
+    /// Will default to `false`.
     pub fn flexible(&mut self, yes: bool) -> &mut Self {
         self.flexible = yes;
         self
     }
 
+    /// Indicate whether first record must be understood as a header.
+    ///
+    /// Will default to `true`.
     pub fn has_headers(&mut self, yes: bool) -> &mut Self {
         self.has_headers = yes;
         self
     }
 
+    /// Create a matching [`SplitterBuilder`] from this builder.
     pub fn to_splitter_builder(&self) -> SplitterBuilder {
         let mut splitter_builder = SplitterBuilder::new();
 
@@ -77,6 +99,8 @@ impl ZeroCopyReaderBuilder {
         splitter_builder
     }
 
+    /// Create a new [`ZeroCopyReader`] using the provided reader implementing
+    /// [`std::io::Read`].
     pub fn from_reader<R: Read>(&self, reader: R) -> ZeroCopyReader<R> {
         ZeroCopyReader {
             buffer: ScratchBuffer::with_capacity(self.buffer_capacity, reader),
@@ -168,6 +192,7 @@ impl<R: Read> ZeroCopyReader<R> {
         Ok(())
     }
 
+    /// Attempt to return a reference to this reader's first record.
     #[inline]
     pub fn byte_headers(&mut self) -> error::Result<&ByteRecord> {
         self.on_first_read()?;
@@ -241,6 +266,10 @@ impl<R: Read> ZeroCopyReader<R> {
         self.read_byte_record_impl()
     }
 
+    /// Unwrap into an optional first record (only when the reader was
+    /// configured not to interpret the first record as a header, and when the
+    /// first record was pre-buffered but not yet reemitted), and the underlying
+    /// [`BufReader`].
     pub fn into_bufreader(self) -> (Option<ByteRecord>, BufReader<R>) {
         (
             self.must_reemit_headers.then_some(self.byte_headers),
@@ -248,6 +277,7 @@ impl<R: Read> ZeroCopyReader<R> {
         )
     }
 
+    /// Returns the current byte offset of the reader in the wrapped stream.
     #[inline(always)]
     pub fn position(&self) -> u64 {
         if self.must_reemit_headers {

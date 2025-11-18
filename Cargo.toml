@@ -5,7 +5,7 @@ edition = "2021"
 authors = [
   "Guillaume Plique <guillaume.plique@sciencespo.fr>"
 ]
-description = "Specialized Rust CSV parsers/writers leveraging SIMD instructions. "
+description = "Specialized Rust CSV readers/writers leveraging SIMD instructions."
 documentation = "https://github.com/medialab/simd-csv#readme"
 homepage = "https://github.com/medialab/simd-csv"
 repository = "https://github.com/medialab/simd-csv"

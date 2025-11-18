@@ -25,36 +25,56 @@ impl Default for WriterBuilder {
 }
 
 impl WriterBuilder {
+    /// Create a new [`WriterBuilder`] with default configuration.
     pub fn new() -> Self {
         Self::default()
     }
 
+    /// Create a new [`WriterBuilder`] with provided `capacity`.
     pub fn with_capacity(capacity: usize) -> Self {
         let mut builder = Self::default();
         builder.buffer_capacity(capacity);
         builder
     }
 
+    /// Set the delimiter to be used by the created [`Writer`].
+    ///
+    /// This delimiter must be a single byte.
+    ///
+    /// Will default to a comma.
     pub fn delimiter(&mut self, delimiter: u8) -> &mut Self {
         self.delimiter = delimiter;
         self
     }
 
+    /// Set the quote char to be used by the created [`Writer`].
+    ///
+    /// This char must be a single byte.
+    ///
+    /// Will default to a double quote.
     pub fn quote(&mut self, quote: u8) -> &mut Self {
         self.quote = quote;
         self
     }
 
+    /// Set the capacity of the created [`Writer`]'s buffered writer.
     pub fn buffer_capacity(&mut self, capacity: usize) -> &mut Self {
         self.buffer_capacity = capacity;
         self
     }
 
+    /// Indicate whether the created [`Writer`] should be "flexible", i.e.
+    /// whether it should allow writing records having different number of
+    /// fields than the first one.
+    ///
+    /// Will default to `false`.
     pub fn flexible(&mut self, yes: bool) -> &mut Self {
         self.flexible = yes;
         self
     }
 
+    /// Create a new [`Writer`] using the provided writer implementing
+    /// [`std::io::Write`].
     pub fn from_writer<W: Write>(&self, writer: W) -> Writer<W> {
         let mut must_quote = [false; 256];
         must_quote[b'\r' as usize] = true;

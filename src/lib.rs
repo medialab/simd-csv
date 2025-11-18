@@ -119,10 +119,10 @@ scalar implementation like the [`csv`](https://docs.rs/csv/) crate. What's more,
 throughput of the SIMD-accelerated parser remains very data-dependent. Sometimes
 you will go up to ~8 times faster, sometimes you will only go as fast as scalar code.
 (Remember also that CSV parsing is often an IO-bound task, even more so than with other
-data formats expected to fit into memory like JSON etc.)
+data formats usually expected to fit into memory like JSON etc.)
 
 As a rule of thumb, the larger your records and cells, the greater the
-performance boost vs. a scalar byte-by-byte implementation will be. This also means that
+performance boost vs. a scalar byte-by-byte implementation. This also means that
 for worst cases, this crate's parser will just be on par with scalar code. I
 have made everything in my power to ensure this SIMD parser is never slower (I think
 one of the reasons why SIMD CSV parsers are not yet very prevalent is that they
@@ -140,7 +140,7 @@ fast as the state-machine/SIMD string searching hybrid.
 `PCLMULQDQ` & shuffling tricks in this context only add more complexity and overhead
 to the SIMD sections of the code, all while making it less "democratic" since you need
 specific SIMD instructions that are not available everywhere, if you don't want to
-fallback to scalar instructions.
+fallback to slower instructions.
 
 Said differently, those techniques seem overkill in practice for CSV parsing.
 But it is also possible I am not competent enough to make them work properly and
@@ -154,11 +154,11 @@ SIMD string searching techniques like the ones implemented in the excellent
 [`memchr`](https://docs.rs/memchr/latest/memchr/) crate:
 
 The idea is to compare 16/32 bytes of data at once with splats of structural
-characters like `\n`, `"` or `,` in order to extract a "move mask" that will
+characters like `\n`, `"` or `,`. We then extract a "move mask" that will
 be handled as a bit string so we can find whether and where some character
 was found using typical bit-twiddling.
 
-This ultimately means that branching happens on each structural characters rather
+This ultimately means that branching happens on each structural character rather
 than on each byte, which is very good. But this is also the reason why CSV data
 with a very high density of structural characters will not get parsed much faster
 than with the equivalent scalar code.
@@ -177,7 +177,7 @@ This crate's CSV parser actually uses two different modes of SIMD string searchi
    quote as fast as possible.
 
 This might seem weird but this seems to be the best tradeoff for performance. Counter-intuitively,
-using larger SIMD registers like `avx2` for 1. actually hurts the overall performance.
+using larger SIMD registers like `avx2` for 1. actually hurts overall performance.
 Similarly, using the amortized routine to scan quoted data is actually slower than
 using the unrolled functions of [`memchr`](https://docs.rs/memchr/latest/memchr/).
 
@@ -191,7 +191,7 @@ will often discard too much work when hitting a record end or a quoted field.
 
 ## Copy amortization
 
-Copying tiny amounts of data often is quite detrimental to the overall performance.
+Copying tiny amounts of data often is quite detrimental to overall performance.
 As such, and to make sure the copying [`Reader`] remains as fast as possible,
 I decided to change the design of the [`ByteRecord`] to save fields as fully-fledged
 ranges over the underlying byte slice instead of only delimiting them implicitly

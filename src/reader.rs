@@ -28,41 +28,64 @@ impl Default for ReaderBuilder {
 }
 
 impl ReaderBuilder {
+    /// Create a new [`ReaderBuilder`] with default configuration.
     pub fn new() -> Self {
         Self::default()
     }
 
+    /// Create a new [`ReaderBuilder`] with provided `capacity`.
     pub fn with_capacity(capacity: usize) -> Self {
         let mut reader = Self::default();
         reader.buffer_capacity(capacity);
         reader
     }
 
+    /// Set the delimiter to be used by the created [`Reader`].
+    ///
+    /// This delimiter must be a single byte.
+    ///
+    /// Will default to a comma.
     pub fn delimiter(&mut self, delimiter: u8) -> &mut Self {
         self.delimiter = delimiter;
         self
     }
 
+    /// Set the quote char to be used by the created [`Reader`].
+    ///
+    /// This char must be a single byte.
+    ///
+    /// Will default to a double quote.
     pub fn quote(&mut self, quote: u8) -> &mut Self {
         self.quote = quote;
         self
     }
 
+    /// Set the capacity of the created [`Reader`]'s buffered reader.
     pub fn buffer_capacity(&mut self, capacity: usize) -> &mut Self {
         self.buffer_capacity = capacity;
         self
     }
 
+    /// Indicate whether the created [`Reader`] should be "flexible", i.e.
+    /// whether it should allow reading records having different number of
+    /// fields than the first one.
+    ///
+    /// Will default to `false`.
     pub fn flexible(&mut self, yes: bool) -> &mut Self {
         self.flexible = yes;
         self
     }
 
+    /// Indicate whether first record must be understood as a header.
+    ///
+    /// Will default to `true`.
     pub fn has_headers(&mut self, yes: bool) -> &mut Self {
         self.has_headers = yes;
         self
     }
 
+    /// Create a new [`Reader`] using the provided reader implementing
+    /// [`std::io::Read`].
     pub fn from_reader<R: Read>(&self, reader: R) -> Reader<R> {
         Reader {
             buffer: BufReaderWithPosition::with_capacity(self.buffer_capacity, reader),
@@ -76,6 +99,8 @@ impl ReaderBuilder {
         }
     }
 
+    /// Create a new [`ReverseReader`] using the provided reader implementing
+    /// both [`std::io::Read`] and [`std::io::Seek`].
     pub fn reverse_from_reader<R: Read + Seek>(
         &self,
         mut reader: R,
@@ -217,6 +242,7 @@ impl<R: Read> Reader<R> {
         self.has_headers
     }
 
+    /// Attempt to return a reference to this reader's first record.
     #[inline]
     pub fn byte_headers(&mut self) -> error::Result<&ByteRecord> {
         self.on_first_read()?;
@@ -224,6 +250,10 @@ impl<R: Read> Reader<R> {
         Ok(&self.headers)
     }
 
+    /// Attempt to read the next CSV record into a pre-allocated [`ByteRecord`].
+    ///
+    /// Returns a boolean indicating whether a record was actually read or if we
+    /// reached the end of the stream.
     #[inline(always)]
     pub fn read_byte_record(&mut self, record: &mut ByteRecord) -> error::Result<bool> {
         self.on_first_read()?;
@@ -237,6 +267,7 @@ impl<R: Read> Reader<R> {
         self.read_byte_record_impl(record)
     }
 
+    /// Return an iterator yielding [`ByteRecord`] structs.
     pub fn byte_records(&mut self) -> ByteRecordsIter<'_, R> {
         ByteRecordsIter {
             reader: self,
@@ -244,6 +275,7 @@ impl<R: Read> Reader<R> {
         }
     }
 
+    /// Transform the reader into an iterator yielding [`ByteRecord`] structs.
     pub fn into_byte_records(self) -> ByteRecordsIntoIter<R> {
         ByteRecordsIntoIter {
             reader: self,
@@ -251,18 +283,27 @@ impl<R: Read> Reader<R> {
         }
     }
 
+    /// Get an immutable reference to the underlying reader.
     pub fn get_ref(&self) -> &R {
         self.buffer.get_ref()
     }
 
+    /// Get a mutable reference to the underlying reader.
     pub fn get_mut(&mut self) -> &mut R {
         self.buffer.get_mut()
     }
 
+    /// Unwrap into the underlying reader.
+    ///
+    /// **BEWARE**: any already buffered data will be lost!
     pub fn into_inner(self) -> R {
         self.buffer.into_inner().into_inner()
     }
 
+    /// Unwrap into an optional first record (only when the reader was
+    /// configured not to interpret the first record as a header, and when the
+    /// first record was pre-buffered but not yet reemitted), and the underlying
+    /// [`BufReader`].
     pub fn into_bufreader(self) -> (Option<ByteRecord>, BufReader<R>) {
         (
             self.must_reemit_headers.then_some(self.headers),
@@ -336,10 +377,14 @@ pub struct ReverseReader<R> {
 }
 
 impl<R: Read + Seek> ReverseReader<R> {
+    /// Create a new reverse reader with default configuration using the
+    /// provided reader implementing both [`std::io::Read`] and
+    /// [`std::io::Seek`].
     pub fn from_reader(reader: R) -> error::Result<Self> {
         ReaderBuilder::new().reverse_from_reader(reader)
     }
 
+    /// Attempt to return a reference to this reader's first record.
     pub fn byte_headers(&self) -> &ByteRecord {
         &self.headers
     }
@@ -361,6 +406,10 @@ impl<R: Read + Seek> ReverseReader<R> {
         Ok(())
     }
 
+    /// Attempt to read the next CSV record into a pre-allocated [`ByteRecord`].
+    ///
+    /// Returns a boolean indicating whether a record was actually read or if we
+    /// reached the end of the stream.
     pub fn read_byte_record(&mut self, record: &mut ByteRecord) -> error::Result<bool> {
         use ReadResult::*;
 
@@ -391,6 +440,7 @@ impl<R: Read + Seek> ReverseReader<R> {
         }
     }
 
+    /// Return an iterator yielding [`ByteRecord`] structs.
     pub fn byte_records(&mut self) -> ReverseByteRecordsIter<'_, R> {
         ReverseByteRecordsIter {
             reader: self,
@@ -398,6 +448,7 @@ impl<R: Read + Seek> ReverseReader<R> {
         }
     }
 
+    /// Transform the reader into an iterator yielding [`ByteRecord`] structs.
     pub fn into_byte_records(self) -> ReverseByteRecordsIntoIter<R> {
         ReverseByteRecordsIntoIter {
             reader: self,

@@ -20,25 +20,40 @@ impl Default for TotalReaderBuilder {
 }
 
 impl TotalReaderBuilder {
+    /// Create a new [`TotalReaderBuilder`] with default configuration.
     pub fn new() -> Self {
         Self::default()
     }
 
+    /// Set the delimiter to be used by the created [`TotalReader`].
+    ///
+    /// This delimiter must be a single byte.
+    ///
+    /// Will default to a comma.
     pub fn delimiter(&mut self, delimiter: u8) -> &mut Self {
         self.delimiter = delimiter;
         self
     }
 
+    /// Set the quote char to be used by the created [`TotalReader`].
+    ///
+    /// This char must be a single byte.
+    ///
+    /// Will default to a double quote.
     pub fn quote(&mut self, quote: u8) -> &mut Self {
         self.quote = quote;
         self
     }
 
+    /// Indicate whether first record must be understood as a header.
+    ///
+    /// Will default to `true`.
     pub fn has_headers(&mut self, yes: bool) -> &mut Self {
         self.has_headers = yes;
         self
     }
 
+    /// Create a [`TotalReader`] from given bytes.
     pub fn from_bytes<'b>(&self, bytes: &'b [u8]) -> TotalReader<'b> {
         TotalReader {
             inner: CoreReader::new(self.delimiter, self.quote),
@@ -177,6 +192,10 @@ impl<'b> TotalReader<'b> {
         }
     }
 
+    /// Attempt to read the next CSV record into a pre-allocated [`ByteRecord`].
+    ///
+    /// Returns a boolean indicating whether a record was actually read or if we
+    /// reached the end of the stream.
     #[inline(always)]
     pub fn read_byte_record(&mut self, record: &mut ByteRecord) -> bool {
         self.on_first_read();
@@ -191,6 +210,7 @@ impl<'b> TotalReader<'b> {
         }
     }
 
+    /// Returns the current byte offset of the reader into its byte slice.
     #[inline(always)]
     pub fn position(&self) -> u64 {
         self.pos as u64
