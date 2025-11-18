@@ -272,7 +272,18 @@ impl Index<usize> for ZeroCopyByteRecord<'_> {
     }
 }
 
-/// An owned, unescaped representation of a CSV record.
+/// An owned, unquoted/unescaped representation of a CSV record.
+///
+/// [`ByteRecord`] are typically used with a [`Reader`](crate::Reader).
+///
+/// *Creating a [`ByteRecord`]*:
+/// ```
+/// use simd_csv::ByteRecord;
+///
+/// let mut record = ByteRecord::new();
+/// record.push_field(b"john");
+/// record.push_field(b"landis");
+/// ```
 #[derive(Default, Clone, Eq)]
 pub struct ByteRecord {
     data: Vec<u8>,
@@ -280,26 +291,32 @@ pub struct ByteRecord {
 }
 
 impl ByteRecord {
+    /// Create a empty record.
     pub fn new() -> Self {
         Self::default()
     }
 
+    /// Return the number of fields of the record.
     #[inline]
     pub fn len(&self) -> usize {
         self.bounds.len()
     }
 
+    /// Return whether the record is empty.
     #[inline]
     pub fn is_empty(&self) -> bool {
         self.len() == 0
     }
 
+    /// Clear the record completely.
     #[inline]
     pub fn clear(&mut self) {
         self.data.clear();
         self.bounds.clear();
     }
 
+    /// Shortens the record, keeping the first `len` elements and dropping the
+    /// rest.
     #[inline]
     pub fn truncate(&mut self, len: usize) {
         self.bounds.truncate(len);
@@ -311,11 +328,18 @@ impl ByteRecord {
         }
     }
 
+    /// Return the underlying byte slice.
+    ///
+    /// **BEWARE**: the [`Reader`](crate::Reader) amortizes copies by sometimes
+    /// including spurious data such as quotes and delimiters. You will never
+    /// see those bytes while accessing fields because the field boundaries
+    /// remain correct, but you will see them in the underlying slice.
     #[inline]
     pub fn as_slice(&self) -> &[u8] {
         &self.data
     }
 
+    /// Return an iterator over the record's fields.
     #[inline]
     pub fn iter(&self) -> ByteRecordIter<'_> {
         ByteRecordIter {
@@ -325,6 +349,7 @@ impl ByteRecord {
         }
     }
 
+    /// Append a new field to the back of the record.
     #[inline(always)]
     pub fn push_field(&mut self, bytes: &[u8]) {
         self.data.extend_from_slice(bytes);
@@ -358,6 +383,7 @@ impl ByteRecord {
         self.bounds.push(bounds);
     }
 
+    /// Return field at `index`. Will return `None` if `index` is out of bounds.
     #[inline]
     pub fn get(&self, index: usize) -> Option<&[u8]> {
         self.bounds
