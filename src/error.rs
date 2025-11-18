@@ -2,16 +2,30 @@ use std::{error, fmt, io, result};
 
 /// The specific type of an error.
 #[derive(Debug)]
+#[non_exhaustive]
 pub enum ErrorKind {
+    /// Wrap a [std::io::Error].
     Io(io::Error),
+
+    /// Indicate that a non-flexible reader or writer attempted to read/write a
+    /// unaligned record having an incorrect number of fields.
     UnequalLengths {
+        /// Expected number of fields
         expected_len: usize,
+        /// Actual and incorrect number of fields observed
         len: usize,
+        /// Optional position `(byte_offset, record_index)`
         pos: Option<(u64, u64)>,
     },
+
+    /// Indicate that a [`Seeker`](crate::Seeker) attempted to find a record in
+    /// a position that is out of bounds
     OutOfBounds {
+        /// Desired position
         pos: u64,
+        /// Byte offset of the first record
         start: u64,
+        /// Byte length of the considered stream
         end: u64,
     },
 }

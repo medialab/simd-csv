@@ -90,10 +90,16 @@ pub struct Writer<W: Write> {
 }
 
 impl<W: Write> Writer<W> {
+    /// Create a new writer with default configuration using the provided writer
+    /// implementing [`std::io::Write`].
+    ///
+    /// Avoid providing a buffered writer because buffering will be handled for
+    /// you by the [`Writer`].
     pub fn from_writer(writer: W) -> Self {
         WriterBuilder::new().from_writer(writer)
     }
 
+    /// Flush the underlying [`BufWriter`].
     #[inline(always)]
     pub fn flush(&mut self) -> io::Result<()> {
         self.buffer.flush()
@@ -123,6 +129,16 @@ impl<W: Write> Writer<W> {
         Ok(())
     }
 
+    /// Write the given "record" while foregoing any quoting/escaping.
+    ///
+    /// This method accepts any item implementing [`IntoIterator`] and yielding
+    /// references to byte slices.
+    ///
+    /// **BEWARE**: if written data needed escaping, invalid CSV will be
+    /// written!
+    ///
+    /// Only use this method when you can guarantee you are doing the right
+    /// thing and want the extra performance.
     pub fn write_record_no_quoting<I, T>(&mut self, record: I) -> error::Result<()>
     where
         I: IntoIterator<Item = T>,
@@ -161,6 +177,13 @@ impl<W: Write> Writer<W> {
         Ok(())
     }
 
+    /// Write the given [`ByteRecord`] while foregoing any quoting/escaping.
+    ///
+    /// **BEWARE**: if written data needed escaping, invalid CSV will be
+    /// written!
+    ///
+    /// Only use this method when you can guarantee you are doing the right
+    /// thing and want the extra performance.
     #[inline(always)]
     pub fn write_byte_record_no_quoting(&mut self, record: &ByteRecord) -> error::Result<()> {
         self.write_record_no_quoting(record.iter())
@@ -224,6 +247,10 @@ impl<W: Write> Writer<W> {
         Ok(())
     }
 
+    /// Write the given "record".
+    ///
+    /// This method accepts any item implementing [`IntoIterator`] and yielding
+    /// references to byte slices.
     pub fn write_record<I, T>(&mut self, record: I) -> error::Result<()>
     where
         I: IntoIterator<Item = T>,
@@ -266,11 +293,20 @@ impl<W: Write> Writer<W> {
         Ok(())
     }
 
+    /// Write the given [`ByteRecord`].
     #[inline(always)]
     pub fn write_byte_record(&mut self, record: &ByteRecord) -> error::Result<()> {
         self.write_record(record.iter())
     }
 
+    /// Write the given byte slice, as-is, without quoting/escaping, with an
+    /// added newline.
+    ///
+    /// **BEWARE**: if written data needed escaping, invalid CSV will be
+    /// written!
+    ///
+    /// This method can typically be used with slices yielded by
+    /// [`Splitter.split_record`](crate::Splitter::split_record).
     #[inline(always)]
     pub fn write_splitted_record(&mut self, record: &[u8]) -> error::Result<()> {
         self.buffer.write_all(record)?;
@@ -279,6 +315,8 @@ impl<W: Write> Writer<W> {
         Ok(())
     }
 
+    /// Attempt to unwrap the underlying [`BufWriter`] by flusing it and
+    /// returning the original writer.
     #[inline]
     pub fn into_inner(self) -> Result<W, IntoInnerError<BufWriter<W>>> {
         self.buffer.into_inner()

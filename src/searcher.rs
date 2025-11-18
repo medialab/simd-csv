@@ -303,11 +303,11 @@ mod aarch64 {
     }
 }
 
-/// Returns the SIMD instructions set used by this crate's amortized
-/// `memchr`-like searcher.
+/// Returns the SIMD instructions used by this crate's amortized `memchr`-like
+/// searcher.
 ///
-/// Note that `memchr` routines, also used by this crate might use
-/// different instruction sets.
+/// Note that `memchr` routines, also used by this crate might use different
+/// instruction sets.
 pub fn searcher_simd_instructions() -> &'static str {
     #[cfg(target_arch = "x86_64")]
     {
