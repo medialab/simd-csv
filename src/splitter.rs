@@ -103,6 +103,8 @@ pub struct Splitter<R> {
 }
 
 impl<R: Read> Splitter<R> {
+    /// Create a new splitter with default configuration using the provided
+    /// reader implementing [`std::io::Read`].
     pub fn from_reader(reader: R) -> Self {
         SplitterBuilder::new().from_reader(reader)
     }
@@ -141,6 +143,8 @@ impl<R: Read> Splitter<R> {
         Ok(())
     }
 
+    /// Consume the reader completely to count the number of records as fast as
+    /// possible.
     pub fn count_records(&mut self) -> error::Result<u64> {
         use ReadResult::*;
 
@@ -173,7 +177,7 @@ impl<R: Read> Splitter<R> {
         Ok(count)
     }
 
-    pub fn split_record_impl(&mut self) -> error::Result<Option<&[u8]>> {
+    fn split_record_impl(&mut self) -> error::Result<Option<&[u8]>> {
         use ReadResult::*;
 
         self.buffer.reset();
@@ -201,6 +205,10 @@ impl<R: Read> Splitter<R> {
         }
     }
 
+    /// Attempt to split the next CSV record and return an optional reference to
+    /// its byte slice.
+    ///
+    /// Returns `Ok(None)` when the reader is fully consumed.
     pub fn split_record(&mut self) -> error::Result<Option<&[u8]>> {
         self.on_first_read()?;
 
@@ -212,6 +220,10 @@ impl<R: Read> Splitter<R> {
         self.split_record_impl()
     }
 
+    /// Attempt to split the next CSV record and return an optional byte offset
+    /// as well as a reference to its byte slice.
+    ///
+    /// Returns `Ok(None)` when the reader is fully consumed.
     pub fn split_record_with_position(&mut self) -> error::Result<Option<(u64, &[u8])>> {
         self.on_first_read()?;
 

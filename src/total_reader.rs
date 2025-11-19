@@ -84,6 +84,8 @@ pub struct TotalReader<'b> {
 }
 
 impl<'b> TotalReader<'b> {
+    /// Create a new reader with default configuration using the provided byte
+    /// slice.
     pub fn from_bytes(bytes: &'b [u8]) -> Self {
         TotalReaderBuilder::new().from_bytes(bytes)
     }
@@ -120,6 +122,7 @@ impl<'b> TotalReader<'b> {
         &self.headers
     }
 
+    /// Count the total number of records.
     pub fn count_records(&mut self) -> u64 {
         use ReadResult::*;
 
@@ -144,6 +147,10 @@ impl<'b> TotalReader<'b> {
         count.saturating_sub(if self.has_headers { 1 } else { 0 })
     }
 
+    /// Attempt to split the next CSV record and return an optional reference to
+    /// its byte slice.
+    ///
+    /// Returns `Ok(None)` when the reader is fully consumed.
     pub fn split_record(&mut self) -> Option<&[u8]> {
         use ReadResult::*;
 
@@ -202,6 +209,7 @@ impl<'b> TotalReader<'b> {
         self.read_byte_record_impl(record)
     }
 
+    /// Return an iterator yielding [`ByteRecord`] structs.
     #[inline(always)]
     pub fn byte_records<'r>(&'r mut self) -> ByteRecordsIter<'r, 'b> {
         ByteRecordsIter {
