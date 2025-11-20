@@ -19,3 +19,17 @@ path = "fuzz_targets/reader.rs"
 test = false
 doc = false
 bench = false
+
+[[bin]]
+name = "splitter"
+path = "fuzz_targets/splitter.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "writer"
+path = "fuzz_targets/writer.rs"
+test = false
+doc = false
+bench = false
