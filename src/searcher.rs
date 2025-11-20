@@ -100,9 +100,10 @@ mod x86_64 {
                 }
 
                 let mut mask = self.mask;
-                let vectorized_end = self.end.sub(SSE2_STEP);
+
                 let mut current = self.current;
                 let start = self.start;
+                let len = self.end.distance(start);
                 let v1 = self.searcher.v1;
                 let v2 = self.searcher.v2;
                 let v3 = self.searcher.v3;
@@ -118,20 +119,24 @@ mod x86_64 {
                     }
 
                     // Main loop of unaligned loads
-                    while current <= vectorized_end {
-                        let chunk = _mm_loadu_si128(current as *const __m128i);
-                        let cmp1 = _mm_cmpeq_epi8(chunk, v1);
-                        let cmp2 = _mm_cmpeq_epi8(chunk, v2);
-                        let cmp3 = _mm_cmpeq_epi8(chunk, v3);
-                        let cmp = _mm_or_si128(cmp1, cmp2);
-                        let cmp = _mm_or_si128(cmp, cmp3);
+                    if len >= SSE2_STEP {
+                        let vectorized_end = self.end.sub(SSE2_STEP);
 
-                        mask = _mm_movemask_epi8(cmp) as u32;
+                        while current <= vectorized_end {
+                            let chunk = _mm_loadu_si128(current as *const __m128i);
+                            let cmp1 = _mm_cmpeq_epi8(chunk, v1);
+                            let cmp2 = _mm_cmpeq_epi8(chunk, v2);
+                            let cmp3 = _mm_cmpeq_epi8(chunk, v3);
+                            let cmp = _mm_or_si128(cmp1, cmp2);
+                            let cmp = _mm_or_si128(cmp, cmp3);
 
-                        current = current.add(SSE2_STEP);
+                            mask = _mm_movemask_epi8(cmp) as u32;
 
-                        if mask != 0 {
-                            continue 'main;
+                            current = current.add(SSE2_STEP);
+
+                            if mask != 0 {
+                                continue 'main;
+                            }
                         }
                     }
 
@@ -240,7 +245,7 @@ mod aarch64 {
         }
     }
 
-    const SSE2_STEP: usize = 16;
+    const NEON_STEP: usize = 16;
 
     impl NeonIndices<'_, '_> {
         pub unsafe fn next(&mut self) -> Option<usize> {
@@ -249,9 +254,9 @@ mod aarch64 {
             }
 
             let mut mask = self.mask;
-            let vectorized_end = self.end.sub(SSE2_STEP);
             let mut current = self.current;
             let start = self.start;
+            let len = self.end.distance(start);
             let v1 = self.searcher.v1;
             let v2 = self.searcher.v2;
             let v3 = self.searcher.v3;
@@ -259,7 +264,7 @@ mod aarch64 {
             'main: loop {
                 // Processing current move mask
                 if mask != 0 {
-                    let offset = current.sub(SSE2_STEP).add(first_offset(mask));
+                    let offset = current.sub(NEON_STEP).add(first_offset(mask));
                     self.mask = clear_least_significant_bit(mask);
                     self.current = current;
 
@@ -267,20 +272,24 @@ mod aarch64 {
                 }
 
                 // Main loop of unaligned loads
-                while current <= vectorized_end {
-                    let chunk = vld1q_u8(current);
-                    let cmp1 = vceqq_u8(chunk, v1);
-                    let cmp2 = vceqq_u8(chunk, v2);
-                    let cmp3 = vceqq_u8(chunk, v3);
-                    let cmp = vorrq_u8(cmp1, cmp2);
-                    let cmp = vorrq_u8(cmp, cmp3);
+                if len >= NEON_STEP {
+                    let vectorized_end = self.end.sub(NEON_STEP);
 
-                    mask = neon_movemask(cmp);
+                    while current <= vectorized_end {
+                        let chunk = vld1q_u8(current);
+                        let cmp1 = vceqq_u8(chunk, v1);
+                        let cmp2 = vceqq_u8(chunk, v2);
+                        let cmp3 = vceqq_u8(chunk, v3);
+                        let cmp = vorrq_u8(cmp1, cmp2);
+                        let cmp = vorrq_u8(cmp, cmp3);
 
-                    current = current.add(SSE2_STEP);
+                        mask = neon_movemask(cmp);
 
-                    if mask != 0 {
-                        continue 'main;
+                        current = current.add(NEON_STEP);
+
+                        if mask != 0 {
+                            continue 'main;
+                        }
                     }
                 }
 
