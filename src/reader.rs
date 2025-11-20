@@ -747,4 +747,15 @@ mod tests {
 
         Ok(())
     }
+
+    // #[test]
+    // fn test_fuzzing_failures() -> error::Result<()> {
+    //     let data = [113u8, 10, 11, 44];
+    //     let mut record = ByteRecord::new();
+    //     let mut reader = Reader::from_reader(&data[..]);
+
+    //     dbg!(reader.read_byte_record(&mut record)?);
+
+    //     Ok(())
+    // }
 }
