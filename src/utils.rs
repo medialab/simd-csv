@@ -54,10 +54,16 @@ pub fn unescape(cell: &[u8], quote: u8) -> Cow<[u8]> {
                 output.reserve_exact(len);
             }
 
-            output.extend_from_slice(&cell[pos..pos + offset + 1]);
+            let limit = pos + offset + 1;
 
-            // NOTE: we assume, next character MUST be a quote
-            pos += offset + 2;
+            output.extend_from_slice(&cell[pos..limit]);
+
+            if limit < len && cell[limit] == quote {
+                pos = limit + 1;
+            } else {
+                pos = limit;
+                break;
+            }
         } else {
             break;
         }
@@ -77,10 +83,16 @@ pub fn unescape_to(cell: &[u8], quote: u8, out: &mut Vec<u8>) {
 
     while pos < len {
         if let Some(offset) = memchr(quote, &cell[pos..]) {
-            out.extend_from_slice(&cell[pos..pos + offset + 1]);
+            let limit = pos + offset + 1;
 
-            // NOTE: we assume, next character MUST be a quote
-            pos += offset + 2;
+            out.extend_from_slice(&cell[pos..limit]);
+
+            if limit < len && cell[limit] == quote {
+                pos = limit + 1;
+            } else {
+                pos = limit;
+                break;
+            }
         } else {
             break;
         }
@@ -153,6 +165,20 @@ mod tests {
             unescape(b"this is \"\"hello\"\" then?", b'"'),
             Cow::<[u8]>::Owned(b"this is \"hello\" then?".to_vec())
         );
+
+        // It should remain safe with incomplete/invalid data
+        assert_eq!(
+            unescape(b"goettigen\"\"", b'"'),
+            Cow::<[u8]>::Owned(b"goettigen\"".to_vec())
+        );
+        assert_eq!(
+            unescape(b"goettigen\"", b'"'),
+            Cow::<[u8]>::Owned(b"goettigen\"".to_vec())
+        );
+        assert_eq!(
+            unescape(b"goettigen\"whatever", b'"'),
+            Cow::<[u8]>::Owned(b"goettigen\"whatever".to_vec())
+        );
     }
 
     #[test]
@@ -169,5 +195,18 @@ mod tests {
         scratch.clear();
         unescape_to(b"this is \"\"hello\"\" then?", b'"', &mut scratch);
         assert_eq!(scratch, b"this is \"hello\" then?");
+
+        // It should remain safe with incomplete/invalid data
+        scratch.clear();
+        unescape_to(b"goettigen\"\"", b'"', &mut scratch);
+        assert_eq!(scratch, b"goettigen\"");
+
+        scratch.clear();
+        unescape_to(b"goettigen\"", b'"', &mut scratch);
+        assert_eq!(scratch, b"goettigen\"");
+
+        scratch.clear();
+        unescape_to(b"goettigen\"whatever", b'"', &mut scratch);
+        assert_eq!(scratch, b"goettigen\"whatever");
     }
 }
