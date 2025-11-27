@@ -242,7 +242,7 @@ dependencies = [
 
 [[package]]
 name = "simd-csv"
-version = "0.10.2"
+version = "0.10.3"
 dependencies = [
  "anyhow",
  "bstr",
