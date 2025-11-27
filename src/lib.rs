@@ -131,6 +131,49 @@ tend to suffer real-life cases where scalar code outperform them).
 Also, note that this crate is geared towards parsing **streams** of CSV data
 only quoted when needed (e.g. not written with a `QUOTE_ALWAYS` policy).
 
+To paint a more faithful picture, here is a table summing up the performance boost
+you might observe vs. the [`csv`](https://docs.rs/csv/) crate while parsing
+CSV data streamed from SSD:
+
+| file               | split | zero_copy | copy  |
+| ------------------ | ----- | --------- | ----- |
+| articles.csv       | ~4.8x | ~4.7x     | ~4.0x |
+| blogs.csv          | ~4.2x | ~2.5x     | ~2.0x |
+| numbers.csv        | ~3.6x | ~2.0x     | ~1.5x |
+| quote-always.csv   | ~1.1x | ~1.2x     | ~1.0x |
+| random.csv         | ~2.8x | ~2.1x     | ~1.7x |
+| range.csv          | ~1.2x | ~1.4x     | ~1.1x |
+| tweets.csv         | ~6.0x | ~2.9x     | ~2.5x |
+| worldcitiespop.csv | ~3.1x | ~2.0x     | ~1.7x |
+| worst-case.csv     | ~1.0x | ~1.1x     | ~0.9x |
+| mediapart.tsv      | ~3.1x | ~3.1x     | ~2.7x |
+
+The **split** column report gains using a [`Splitter`], the **zero_copy** column
+report gains using a [`ZeroCopyReader`] and finally the **copy** column report
+gains using a [`Reader`].
+
+Comparison is done including IO, on `x86_64` with `avx2` support.
+
+Here is a description of the files:
+
+- **articles.csv**: 11GB summing up 3M press articles from a French
+  media outlet, with a column containing full text of the articles.
+- **blogs.csv**: 1GB with ~10 medium-sized columns summing up information about
+  1M blogs.
+- **numbers.csv**: 200MB of the same 9 columns containing a number from 1 to 9,
+  repeated 10M times.
+- **quote-always.csv**: same as **random.csv** but written using a needless
+  `QUOTE_ALWAYS` policy.
+- **random.csv**: 500MB of 6 columns containing a random `f32` number.
+- **range.csv**: 400MB with a single column containing an incremental integer
+  up to ~50M.
+- **tweets.csv**: 6.5GB representing ~7M tweets. Lots of columns, most of them
+  mostly empty.
+- **worldcitiespop.csv**: 500MB of repeated CSV data from world cities population open data.
+- **worst-case.csv**: 100MB repeating a single column containing just "1" 50M times.
+- **mediapart.tsv**: 3GB representing an export of a tar archive containing 10k
+  articles downloaded from a French media outlet with a column containing raw HTML.
+
 ## Regarding simdjson techniques
 
 I have tried very hard to apply [simdjson](https://arxiv.org/abs/1902.08318) tricks
@@ -176,7 +219,7 @@ This crate's CSV parser actually uses two different modes of SIMD string searchi
    of the [`memchr`](https://docs.rs/memchr/latest/memchr/) crate directly to find the next
    quote as fast as possible.
 
-This might seem weird but this seems to be the best tradeoff for performance. Counter-intuitively,
+This might seem weird but this is the best tradeoff for performance. Counter-intuitively,
 using larger SIMD registers like `avx2` for 1. actually hurts overall performance.
 Similarly, using the amortized routine to scan quoted data is actually slower than
 using the unrolled functions of [`memchr`](https://docs.rs/memchr/latest/memchr/).
