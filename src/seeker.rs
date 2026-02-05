@@ -2,6 +2,7 @@ use std::io::{Cursor, Read, Seek, SeekFrom};
 use std::ops::Range;
 
 use crate::error::{self, Error, ErrorKind};
+use crate::reader::Reader;
 use crate::records::ByteRecord;
 use crate::splitter::Splitter;
 use crate::utils::ReverseReader;
@@ -546,5 +547,20 @@ impl<R: Read + Seek> Seeker<R> {
     pub fn into_splitter(self) -> error::Result<Splitter<R>> {
         let pos = SeekFrom::Start(self.sample.initial_position);
         self.into_splitter_from_position(pos)
+    }
+
+    /// Create a [`Reader`] starting from an arbitrary position. This can be useful
+    /// when you want to use the seeker to find a record at a specific position and
+    /// then read the stream from there. Just be aware that the given position must
+    /// be the exact beginning of a CSV record, or the behavior of the returned
+    /// reader will be undefined.
+    pub fn into_reader_from_position(
+        mut self,
+        pos: SeekFrom,
+    ) -> error::Result<Reader<R>> {
+        self.inner.seek(pos)?;
+        self.builder.has_headers(self.has_headers);
+
+        Ok(self.builder.to_reader_builder().from_reader(self.inner))
     }
 }
