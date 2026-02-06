@@ -11,8 +11,10 @@ jobs:
             os: ubuntu-latest
           - target: aarch64-unknown-linux-gnu
             os: ubuntu-24.04-arm
-          - target: x86_64-apple-darwin
-            os: macos-13
+          # NOTE: I don't think we have a way to test SSE/AVX instructions
+          # on old macos anymore...
+          # - target: x86_64-apple-darwin
+          #   os: macos-13
           - target: aarch64-apple-darwin
             os: macos-latest
           - target: x86_64-pc-windows-msvc
