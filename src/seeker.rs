@@ -517,41 +517,53 @@ impl<R: Read + Seek> Seeker<R> {
         self.inner
     }
 
-    fn into_zero_copy_reader_from_position(
-        mut self,
-        pos: SeekFrom,
-    ) -> error::Result<ZeroCopyReader<R>> {
-        self.inner.seek(pos)?;
-        self.builder.has_headers(self.has_headers);
-        self.builder.flexible(false);
-
-        Ok(self.builder.from_reader(self.inner))
-    }
-
-    /// Transform the seeker into a [`ZeroCopyReader`]. Underlying reader will
-    /// be correctly reset to the stream initial position beforehand.
-    pub fn into_zero_copy_reader(self) -> error::Result<ZeroCopyReader<R>> {
-        let pos = SeekFrom::Start(self.sample.initial_position);
-        self.into_zero_copy_reader_from_position(pos)
-    }
-
     /// Create a [`Splitter`] starting from an arbitrary position. This can be useful
     /// when you want to use the seeker to find a record at a specific position and
     /// then read the stream from there. Just be aware that the given position must
     /// be the exact beginning of a CSV record, or yielded records will therefore
     /// be incorrect.
-    fn into_splitter_at_position(mut self, pos: SeekFrom) -> error::Result<Splitter<R>> {
+    pub fn into_splitter_at_position(mut self, pos: SeekFrom) -> error::Result<Splitter<R>> {
         self.inner.seek(pos)?;
-        self.builder.has_headers(self.has_headers);
+        self.builder.has_headers(false);
 
         Ok(self.builder.to_splitter_builder().from_reader(self.inner))
     }
 
     /// Transform the seeker into a [`Splitter`]. Underlying reader will
     /// be correctly reset to the stream initial position beforehand.
-    pub fn into_splitter(self) -> error::Result<Splitter<R>> {
+    pub fn into_splitter(mut self) -> error::Result<Splitter<R>> {
         let pos = SeekFrom::Start(self.sample.initial_position);
-        self.into_splitter_at_position(pos)
+
+        self.inner.seek(pos)?;
+        self.builder.has_headers(self.has_headers);
+
+        Ok(self.builder.to_splitter_builder().from_reader(self.inner))
+    }
+
+    /// Create a [`ZeroCopyReader`] starting from an arbitrary position. This can be useful
+    /// when you want to use the seeker to find a record at a specific position and
+    /// then read the stream from there. Just be aware that the given position must
+    /// be the exact beginning of a CSV record, or yielded records will therefore
+    /// be incorrect.
+    pub fn into_zero_copy_reader_at_position(
+        mut self,
+        pos: SeekFrom,
+    ) -> error::Result<ZeroCopyReader<R>> {
+        self.inner.seek(pos)?;
+        self.builder.has_headers(false);
+
+        Ok(self.builder.from_reader(self.inner))
+    }
+
+    /// Transform the seeker into a [`ZeroCopyReader`]. Underlying reader will
+    /// be correctly reset to the stream initial position beforehand.
+    pub fn into_zero_copy_reader(mut self) -> error::Result<ZeroCopyReader<R>> {
+        let pos = SeekFrom::Start(self.sample.initial_position);
+
+        self.inner.seek(pos)?;
+        self.builder.has_headers(self.has_headers);
+
+        Ok(self.builder.from_reader(self.inner))
     }
 
     /// Create a [`Reader`] starting from an arbitrary position. This can be useful
@@ -561,15 +573,19 @@ impl<R: Read + Seek> Seeker<R> {
     /// be incorrect.
     pub fn into_reader_at_position(mut self, pos: SeekFrom) -> error::Result<Reader<R>> {
         self.inner.seek(pos)?;
-        self.builder.has_headers(self.has_headers);
+        self.builder.has_headers(false);
 
         Ok(self.builder.to_reader_builder().from_reader(self.inner))
     }
 
     /// Transform the seeker into a [`Reader`]. Underlying reader will
     /// be correctly reset to the stream initial position beforehand.
-    pub fn into_reader(self) -> error::Result<Reader<R>> {
+    pub fn into_reader(mut self) -> error::Result<Reader<R>> {
         let pos = SeekFrom::Start(self.sample.initial_position);
-        self.into_reader_at_position(pos)
+
+        self.inner.seek(pos)?;
+        self.builder.has_headers(self.has_headers);
+
+        Ok(self.builder.to_reader_builder().from_reader(self.inner))
     }
 }
