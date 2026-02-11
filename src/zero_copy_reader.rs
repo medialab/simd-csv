@@ -3,6 +3,7 @@ use std::io::{BufReader, Read};
 use crate::buffer::ScratchBuffer;
 use crate::core::{CoreReader, ReadResult};
 use crate::error::{self, Error, ErrorKind};
+use crate::reader::{ReaderBuilder};
 use crate::records::{ByteRecord, ZeroCopyByteRecord};
 use crate::splitter::SplitterBuilder;
 use crate::utils::trim_bom;
@@ -97,6 +98,19 @@ impl ZeroCopyReaderBuilder {
             .delimiter(self.delimiter);
 
         splitter_builder
+    }
+
+    /// Create a matching [`ReaderBuilder`] from this builder.
+    pub fn to_reader_builder(&self) -> ReaderBuilder {
+        let mut reader_builder = ReaderBuilder::new();
+
+        reader_builder
+            .buffer_capacity(self.buffer_capacity)
+            .has_headers(self.has_headers)
+            .quote(self.quote)
+            .delimiter(self.delimiter);
+
+        reader_builder
     }
 
     /// Create a new [`ZeroCopyReader`] using the provided reader implementing
