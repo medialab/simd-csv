@@ -589,3 +589,22 @@ impl<R: Read + Seek> Seeker<R> {
         Ok(self.builder.to_reader_builder().from_reader(self.inner))
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use std::io::Cursor;
+
+    use super::*;
+
+    #[test]
+    fn test_single_row() {
+        let data = "name\njohn";
+        let mut seeker = SeekerBuilder::new()
+            .from_reader(Cursor::new(data))
+            .unwrap()
+            .unwrap();
+
+        assert_eq!(seeker.first_byte_record().unwrap(), Some(brec!["john"]));
+        assert_eq!(seeker.last_byte_record().unwrap(), Some(brec!["john"]));
+    }
+}
