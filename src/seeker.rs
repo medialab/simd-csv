@@ -607,4 +607,27 @@ mod tests {
         assert_eq!(seeker.first_byte_record().unwrap(), Some(brec!["john"]));
         assert_eq!(seeker.last_byte_record().unwrap(), Some(brec!["john"]));
     }
+
+    #[test]
+    fn test_middle_of_crlf() {
+        let data =
+            b"name,surname\r\njohn,landis\r\nlucy,test\r\nhelly,radio\r\nadamic,milshake\r\n";
+
+        let mut seeker = SeekerBuilder::new()
+            .from_reader(Cursor::new(data))
+            .unwrap()
+            .unwrap();
+
+        let (offset, _) = seeker.find_record_after(24).unwrap().unwrap();
+        assert_eq!(offset, 27);
+
+        let (offset, _) = seeker.find_record_after(25).unwrap().unwrap();
+        assert_eq!(offset, 38);
+
+        let (offset, _) = seeker.find_record_after(26).unwrap().unwrap();
+        assert_eq!(offset, 38);
+
+        let (offset, _) = seeker.find_record_after(27).unwrap().unwrap();
+        assert_eq!(offset, 38);
+    }
 }
