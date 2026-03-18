@@ -182,10 +182,7 @@ fn main() -> anyhow::Result<()> {
             let file = File::open(&args.path)?;
             let mut p = Parser::new(default_dialect(), AlignedBuffer::new(file));
             let mut count = 0;
-            while let Some(mut record) = p.read_line() {
-                for field in record.iter() {
-                    let _ = field.len();
-                }
+            while let Some(_) = p.read_line() {
                 count += 1;
             }
             println!("{}", count);
