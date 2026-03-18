@@ -34,6 +34,7 @@ fn main() -> anyhow::Result<()> {
 
     if args.simd {
         let mut reader = simd_csv::ReaderBuilder::with_capacity(DEFAULT_CAPACITY)
+            .has_headers(false)
             .delimiter(delimiter)
             .from_reader(file);
 

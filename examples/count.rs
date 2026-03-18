@@ -41,6 +41,7 @@ impl Args {
     fn simd_splitter(&self) -> csv::Result<simd_csv::Splitter<File>> {
         Ok(
             simd_csv::SplitterBuilder::with_capacity(BUFFERED_READER_DEFAULT_CAPACITY)
+                .has_headers(false)
                 .delimiter(self.delimiter())
                 .from_reader(File::open(&self.path)?),
         )
@@ -49,6 +50,7 @@ impl Args {
     fn simd_zero_copy_reader(&self) -> csv::Result<simd_csv::ZeroCopyReader<File>> {
         Ok(
             simd_csv::ZeroCopyReaderBuilder::with_capacity(BUFFERED_READER_DEFAULT_CAPACITY)
+                .has_headers(false)
                 .delimiter(self.delimiter())
                 .from_reader(File::open(&self.path)?),
         )
@@ -57,6 +59,7 @@ impl Args {
     fn simd_buffered_reader(&self) -> csv::Result<simd_csv::Reader<File>> {
         Ok(
             simd_csv::ReaderBuilder::with_capacity(BUFFERED_READER_DEFAULT_CAPACITY)
+                .has_headers(false)
                 .delimiter(self.delimiter())
                 .from_reader(File::open(&self.path)?),
         )
@@ -107,6 +110,7 @@ fn main() -> anyhow::Result<()> {
             let map = unsafe { Mmap::map(&file).unwrap() };
 
             let mut reader = simd_csv::TotalReaderBuilder::new()
+                .has_headers(false)
                 .delimiter(args.delimiter())
                 .from_bytes(&map);
 
@@ -156,6 +160,7 @@ fn main() -> anyhow::Result<()> {
             let map = unsafe { Mmap::map(&file).unwrap() };
 
             let mut reader = simd_csv::TotalReaderBuilder::new()
+                .has_headers(false)
                 .delimiter(args.delimiter())
                 .from_bytes(&map);
             let mut record = simd_csv::ByteRecord::new();
