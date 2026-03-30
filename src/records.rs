@@ -443,6 +443,11 @@ impl Index<usize> for ByteRecord {
 impl<T: AsRef<[u8]>> Extend<T> for ByteRecord {
     #[inline]
     fn extend<I: IntoIterator<Item = T>>(&mut self, iter: I) {
+        let iter = iter.into_iter();
+        let size_hint = iter.size_hint();
+
+        self.bounds.reserve(size_hint.1.unwrap_or(size_hint.0));
+
         for x in iter {
             self.push_field(x.as_ref());
         }
