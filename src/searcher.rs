@@ -94,6 +94,22 @@ mod x86_64 {
         const SSE2_STEP: usize = 16;
 
         impl SSE2Indices<'_, '_> {
+            #[inline]
+            pub unsafe fn _next_in_current_mask(&mut self) -> Option<usize> {
+                let mask = self.mask;
+                let current = self.current;
+
+                if mask != 0 {
+                    let offset = current.sub(SSE2_STEP).add(first_offset(mask));
+                    self.mask = clear_least_significant_bit(mask);
+                    self.current = current;
+
+                    Some(offset.distance(self.start))
+                } else {
+                    None
+                }
+            }
+
             pub unsafe fn next(&mut self) -> Option<usize> {
                 if self.start >= self.end {
                     return None;
@@ -248,6 +264,22 @@ mod aarch64 {
     const NEON_STEP: usize = 16;
 
     impl NeonIndices<'_, '_> {
+        #[inline]
+        pub unsafe fn _next_in_current_mask(&mut self) -> Option<usize> {
+            let mask = self.mask;
+            let current = self.current;
+
+            if mask != 0 {
+                let offset = current.sub(NEON_STEP).add(first_offset(mask));
+                self.mask = clear_least_significant_bit(mask);
+                self.current = current;
+
+                Some(offset.distance(self.start))
+            } else {
+                None
+            }
+        }
+
         pub unsafe fn next(&mut self) -> Option<usize> {
             if self.start >= self.end {
                 return None;
@@ -432,6 +464,26 @@ impl Iterator for Indices<'_, '_> {
         #[cfg(not(any(target_arch = "x86_64", target_arch = "aarch64")))]
         {
             self.inner.next()
+        }
+    }
+}
+
+impl Indices<'_, '_> {
+    #[inline(always)]
+    pub fn _next_in_current_mask(&mut self) -> Option<usize> {
+        #[cfg(target_arch = "x86_64")]
+        {
+            unsafe { self.inner._next_in_current_mask() }
+        }
+
+        #[cfg(target_arch = "aarch64")]
+        {
+            unsafe { self.inner._next_in_current_mask() }
+        }
+
+        #[cfg(not(any(target_arch = "x86_64", target_arch = "aarch64")))]
+        {
+            None
         }
     }
 }
