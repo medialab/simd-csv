@@ -7,6 +7,9 @@ pub enum ErrorKind {
     /// Wrap a [std::io::Error].
     Io(io::Error),
 
+    /// Indicate that utf-8 decoding failed when reading a record.
+    Utf8Error,
+
     /// Indicate that a non-flexible reader or writer attempted to read/write a
     /// unaligned record having an incorrect number of fields.
     UnequalLengths {
@@ -73,6 +76,7 @@ impl fmt::Display for Error {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self.0 {
             ErrorKind::Io(ref err) => err.fmt(f),
+            ErrorKind::Utf8Error => write!(f, "utf8 decode error"),
             ErrorKind::UnequalLengths {
                 expected_len,
                 len,

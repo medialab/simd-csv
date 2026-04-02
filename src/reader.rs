@@ -3,7 +3,7 @@ use std::io::{BufRead, BufReader, Read, Seek, SeekFrom};
 use crate::buffer::BufReaderWithPosition;
 use crate::core::{CoreReader, ReadResult};
 use crate::error::{self, Error, ErrorKind};
-use crate::records::{ByteRecord, ByteRecordBuilder};
+use crate::records::{ByteRecord, ByteRecordBuilder, StringRecord};
 use crate::utils::{self, trim_bom};
 
 /// Builds a [`Reader`] with given configuration.
@@ -265,6 +265,19 @@ impl<R: Read> Reader<R> {
         }
 
         self.read_byte_record_impl(record)
+    }
+
+    pub fn read_record(&mut self, record: &mut StringRecord) -> error::Result<bool> {
+        // TODO: test is_ascii beforehand, basic utf8, simdutf8
+        if self.read_byte_record(record.as_inner_mut())? {
+            if !record.validate_utf8() {
+                Err(Error::new(ErrorKind::Utf8Error))
+            } else {
+                Ok(true)
+            }
+        } else {
+            Ok(false)
+        }
     }
 
     /// Return an iterator yielding [`ByteRecord`] structs.

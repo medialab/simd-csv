@@ -6,11 +6,13 @@ use memmap2::Mmap;
 #[derive(Debug, ValueEnum, Clone)]
 enum CountingMode {
     Baseline,
+    StringBaseline,
     Simd,
     Split,
     Mmap,
     ZeroCopy,
     Copy,
+    StringCopy,
     MmapCopy,
     Lines,
 }
@@ -88,6 +90,22 @@ fn main() -> anyhow::Result<()> {
 
             println!("{}", count);
         }
+        CountingMode::StringBaseline => {
+            let mut reader_builder = csv::ReaderBuilder::new();
+            reader_builder
+                .has_headers(false)
+                .delimiter(args.delimiter());
+            let mut reader = reader_builder.from_path(&args.path)?;
+
+            let mut count: u64 = 0;
+            let mut record = csv::StringRecord::new();
+
+            while reader.read_record(&mut record)? {
+                count += 1;
+            }
+
+            println!("{}", count);
+        }
         CountingMode::Simd => {
             let mut splitter = args.simd_splitter()?;
 
@@ -149,6 +167,18 @@ fn main() -> anyhow::Result<()> {
             let mut count: u64 = 0;
 
             while reader.read_byte_record(&mut record)? {
+                count += 1;
+            }
+
+            println!("{}", count);
+        }
+        CountingMode::StringCopy => {
+            let mut reader = args.simd_buffered_reader()?;
+            let mut record = simd_csv::StringRecord::new();
+
+            let mut count: u64 = 0;
+
+            while reader.read_record(&mut record)? {
                 count += 1;
             }
 

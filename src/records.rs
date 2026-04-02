@@ -610,6 +610,32 @@ impl<'r> ByteRecordBuilder<'r> {
     }
 }
 
+pub struct StringRecord {
+    inner: ByteRecord,
+}
+
+impl StringRecord {
+    pub fn new() -> Self {
+        Self {
+            inner: ByteRecord::new(),
+        }
+    }
+
+    pub(crate) fn as_inner_mut(&mut self) -> &mut ByteRecord {
+        &mut self.inner
+    }
+
+    pub(crate) fn validate_utf8(&mut self) -> bool {
+        if let Err(_) = std::str::from_utf8(self.inner.as_slice()) {
+            // NOTE: we clear so we don't leave the record in an invalid state!
+            self.inner.clear();
+            false
+        } else {
+            true
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
