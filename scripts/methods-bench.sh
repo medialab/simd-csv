@@ -43,6 +43,14 @@ echo String Copy
 $TIME $PROG string-copy $1 > /dev/null
 echo
 
+echo "String Copy (ascii prefilter)"
+$TIME $PROG string-copy --ascii-prefilter $1 > /dev/null
+echo
+
+echo "String Copy (simdutf8)"
+$TIME $PROG string-copy --simd $1 > /dev/null
+echo
+
 echo Mmap Copy
 $TIME $PROG mmap-copy $1 > /dev/null
 echo

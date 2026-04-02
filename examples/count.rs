@@ -29,6 +29,12 @@ struct Args {
     /// Check alignment (i.e. whether all rows have same number of columns)
     #[arg(short, long)]
     check_alignment: bool,
+
+    #[arg(long)]
+    ascii_prefilter: bool,
+
+    #[arg(long)]
+    simd: bool,
 }
 
 impl Args {
@@ -178,8 +184,18 @@ fn main() -> anyhow::Result<()> {
 
             let mut count: u64 = 0;
 
-            while reader.read_record(&mut record)? {
-                count += 1;
+            if args.ascii_prefilter {
+                while reader.read_record_ascii_prefilter(&mut record)? {
+                    count += 1;
+                }
+            } else if args.simd {
+                while reader.read_record_simd(&mut record)? {
+                    count += 1;
+                }
+            } else {
+                while reader.read_record(&mut record)? {
+                    count += 1;
+                }
             }
 
             println!("{}", count);

@@ -268,9 +268,35 @@ impl<R: Read> Reader<R> {
     }
 
     pub fn read_record(&mut self, record: &mut StringRecord) -> error::Result<bool> {
-        // TODO: test is_ascii beforehand, basic utf8, simdutf8
         if self.read_byte_record(record.as_inner_mut())? {
             if !record.validate_utf8() {
+                Err(Error::new(ErrorKind::Utf8Error))
+            } else {
+                Ok(true)
+            }
+        } else {
+            Ok(false)
+        }
+    }
+
+    pub fn read_record_ascii_prefilter(
+        &mut self,
+        record: &mut StringRecord,
+    ) -> error::Result<bool> {
+        if self.read_byte_record(record.as_inner_mut())? {
+            if !record.validate_utf8_with_ascii_prefilter() {
+                Err(Error::new(ErrorKind::Utf8Error))
+            } else {
+                Ok(true)
+            }
+        } else {
+            Ok(false)
+        }
+    }
+
+    pub fn read_record_simd(&mut self, record: &mut StringRecord) -> error::Result<bool> {
+        if self.read_byte_record(record.as_inner_mut())? {
+            if !record.validate_utf8_simd() {
                 Err(Error::new(ErrorKind::Utf8Error))
             } else {
                 Ok(true)

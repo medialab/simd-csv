@@ -634,6 +634,34 @@ impl StringRecord {
             true
         }
     }
+
+    pub(crate) fn validate_utf8_with_ascii_prefilter(&mut self) -> bool {
+        if self.inner.as_slice().is_ascii() {
+            true
+        } else if let Err(_) = std::str::from_utf8(self.inner.as_slice()) {
+            // NOTE: we clear so we don't leave the record in an invalid state!
+            self.inner.clear();
+            false
+        } else {
+            true
+        }
+    }
+
+    pub(crate) fn validate_utf8_simd(&mut self) -> bool {
+        use bstr::ByteSlice;
+
+        if let Some(i) = self.inner.as_slice().find_non_ascii_byte() {
+            if let Err(_) = simdutf8::basic::from_utf8(&self.inner.as_slice()[i..]) {
+                // NOTE: we clear so we don't leave the record in an invalid state!
+                self.inner.clear();
+                false
+            } else {
+                true
+            }
+        } else {
+            true
+        }
+    }
 }
 
 #[cfg(test)]
