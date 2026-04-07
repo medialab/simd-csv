@@ -30,6 +30,7 @@ debug = true
 
 [dependencies]
 memchr = "2.7.6"
+simdutf8 = "0.1.5"
 
 [dev-dependencies]
 anyhow = "1.0.100"

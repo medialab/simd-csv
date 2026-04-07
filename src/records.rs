@@ -626,7 +626,11 @@ impl StringRecord {
     }
 
     pub(crate) fn validate_utf8(&mut self) -> bool {
-        if let Err(_) = std::str::from_utf8(self.inner.as_slice()) {
+        let bytes = self.inner.as_slice();
+
+        if bytes.is_ascii() {
+            true
+        } else if let Err(_) = simdutf8::basic::from_utf8(bytes) {
             // NOTE: we clear so we don't leave the record in an invalid state!
             self.inner.clear();
             false
