@@ -2,7 +2,7 @@
 
 use libfuzzer_sys::fuzz_target;
 
-use simd_csv::{ByteRecord, ErrorKind, ReaderBuilder};
+use simd_csv::{ByteRecord, ReaderBuilder};
 
 fuzz_target!(|data: &[u8]| {
     let mut reader = ReaderBuilder::new().flexible(true).from_reader(data);
@@ -14,7 +14,7 @@ fuzz_target!(|data: &[u8]| {
             Ok(false) => {
                 break;
             }
-            Err(err) => unreachable!(),
+            Err(_) => unreachable!(),
         }
     }
 });
