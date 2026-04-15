@@ -857,6 +857,30 @@ mod tests {
         Ok(())
     }
 
+    #[test]
+    fn test_quoted_final_cr() -> error::Result<()> {
+        let csv = b"name,surname\n\"test\",\"\r\"\njohn,landis";
+
+        let expected = vec![
+            brec!["name", "surname"],
+            brec!["test", "\r"],
+            brec!["john", "landis"],
+        ];
+
+        for capacity in [32usize, 4, 3, 2, 1] {
+            let mut reader = ReaderBuilder::with_capacity(capacity)
+                .has_headers(false)
+                .from_reader(Cursor::new(csv));
+
+            assert_eq!(
+                reader.byte_records().collect::<Result<Vec<_>, _>>()?,
+                expected,
+            );
+        }
+
+        Ok(())
+    }
+
     // #[test]
     // fn test_fuzzing_failures() -> error::Result<()> {
     //     let data = [13u8, 13, 96, 34, 34, 44, 10, 44, 96, 34, 13, 34, 44, 10];
