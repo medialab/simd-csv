@@ -635,6 +635,24 @@ impl StringRecord {
         }
     }
 
+    /// Return the number of fields of the record.
+    #[inline(always)]
+    pub fn len(&self) -> usize {
+        self.inner.len()
+    }
+
+    /// Return whether the record is empty.
+    #[inline(always)]
+    pub fn is_empty(&self) -> bool {
+        self.inner.is_empty()
+    }
+
+    /// Clear the record completely.
+    #[inline(always)]
+    pub fn clear(&mut self) {
+        self.inner.clear();
+    }
+
     #[inline(always)]
     pub(crate) fn as_inner_mut(&mut self) -> &mut ByteRecord {
         &mut self.inner
@@ -665,6 +683,16 @@ impl StringRecord {
         })
     }
 
+    /// Return an iterator over the record's fields.
+    #[inline]
+    pub fn iter(&self) -> StringRecordIter<'_> {
+        StringRecordIter {
+            record: &self.inner,
+            current_forward: 0,
+            current_backward: self.len(),
+        }
+    }
+
     /// Append a new field to the back of the record.
     #[inline(always)]
     pub fn push_field(&mut self, field: &str) {
@@ -676,6 +704,96 @@ impl PartialEq for StringRecord {
     #[inline(always)]
     fn eq(&self, other: &Self) -> bool {
         self.inner.eq(&other.inner)
+    }
+}
+
+impl Hash for StringRecord {
+    #[inline(always)]
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        self.inner.hash(state);
+    }
+}
+
+impl Index<usize> for StringRecord {
+    type Output = str;
+
+    #[inline]
+    fn index(&self, i: usize) -> &str {
+        self.get(i).unwrap()
+    }
+}
+
+impl<'r> IntoIterator for &'r StringRecord {
+    type IntoIter = StringRecordIter<'r>;
+    type Item = &'r str;
+
+    #[inline]
+    fn into_iter(self) -> StringRecordIter<'r> {
+        self.iter()
+    }
+}
+
+impl fmt::Debug for StringRecord {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "StringRecord(")?;
+        f.debug_list().entries(self.iter()).finish()?;
+        write!(f, ")")?;
+        Ok(())
+    }
+}
+
+pub struct StringRecordIter<'a> {
+    record: &'a ByteRecord,
+    current_forward: usize,
+    current_backward: usize,
+}
+
+impl ExactSizeIterator for StringRecordIter<'_> {}
+
+impl<'a> Iterator for StringRecordIter<'a> {
+    type Item = &'a str;
+
+    #[inline]
+    fn next(&mut self) -> Option<Self::Item> {
+        if self.current_forward == self.current_backward {
+            None
+        } else {
+            let (start, end) = self.record.bounds[self.current_forward];
+
+            self.current_forward += 1;
+
+            Some(unsafe { std::str::from_utf8_unchecked(&self.record.data[start..end]) })
+        }
+    }
+
+    #[inline]
+    fn size_hint(&self) -> (usize, Option<usize>) {
+        let size = self.current_backward - self.current_forward;
+
+        (size, Some(size))
+    }
+
+    #[inline]
+    fn count(self) -> usize
+    where
+        Self: Sized,
+    {
+        self.len()
+    }
+}
+
+impl DoubleEndedIterator for StringRecordIter<'_> {
+    #[inline]
+    fn next_back(&mut self) -> Option<Self::Item> {
+        if self.current_forward == self.current_backward {
+            None
+        } else {
+            self.current_backward -= 1;
+
+            let (start, end) = self.record.bounds[self.current_backward];
+
+            Some(unsafe { std::str::from_utf8_unchecked(&self.record.data[start..end]) })
+        }
     }
 }
 

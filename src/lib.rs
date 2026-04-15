@@ -332,6 +332,23 @@ macro_rules! brec {
     }};
 }
 
+#[allow(unused_macros)]
+macro_rules! srec {
+    () => {{
+        $crate::records::StringRecord::new()
+    }};
+
+    ($($x: expr),*) => {{
+        let mut r = $crate::records::StringRecord::new();
+
+        $(
+            r.push_field($x);
+        )*
+
+        r
+    }};
+}
+
 mod buffer;
 mod core;
 mod debug;

@@ -295,6 +295,22 @@ impl<R: Read> Reader<R> {
         }
     }
 
+    /// Return an iterator yielding [`StringRecord`] structs.
+    pub fn records(&mut self) -> StringRecordsIter<'_, R> {
+        StringRecordsIter {
+            reader: self,
+            record: StringRecord::new(),
+        }
+    }
+
+    /// Transform the reader into an iterator yielding [`StringRecord`] structs.
+    pub fn into_records(self) -> StringRecordsIntoIter<R> {
+        StringRecordsIntoIter {
+            reader: self,
+            record: StringRecord::new(),
+        }
+    }
+
     /// Get an immutable reference to the underlying reader.
     pub fn get_ref(&self) -> &R {
         self.buffer.get_ref()
@@ -367,6 +383,46 @@ impl<R: Read> Iterator for ByteRecordsIntoIter<R> {
         // NOTE: cloning the record will not carry over excess capacity
         // because the record only contains `Vec` currently.
         match self.reader.read_byte_record(&mut self.record) {
+            Err(err) => Some(Err(err)),
+            Ok(true) => Some(Ok(self.record.clone())),
+            Ok(false) => None,
+        }
+    }
+}
+
+pub struct StringRecordsIter<'r, R> {
+    reader: &'r mut Reader<R>,
+    record: StringRecord,
+}
+
+impl<R: Read> Iterator for StringRecordsIter<'_, R> {
+    type Item = error::Result<StringRecord>;
+
+    #[inline]
+    fn next(&mut self) -> Option<Self::Item> {
+        // NOTE: cloning the record will not carry over excess capacity
+        // because the record only contains `Vec` currently.
+        match self.reader.read_record(&mut self.record) {
+            Err(err) => Some(Err(err)),
+            Ok(true) => Some(Ok(self.record.clone())),
+            Ok(false) => None,
+        }
+    }
+}
+
+pub struct StringRecordsIntoIter<R> {
+    reader: Reader<R>,
+    record: StringRecord,
+}
+
+impl<R: Read> Iterator for StringRecordsIntoIter<R> {
+    type Item = error::Result<StringRecord>;
+
+    #[inline]
+    fn next(&mut self) -> Option<Self::Item> {
+        // NOTE: cloning the record will not carry over excess capacity
+        // because the record only contains `Vec` currently.
+        match self.reader.read_record(&mut self.record) {
             Err(err) => Some(Err(err)),
             Ok(true) => Some(Ok(self.record.clone())),
             Ok(false) => None,
@@ -545,6 +601,28 @@ mod tests {
                 reader.byte_records().collect::<Result<Vec<_>, _>>()?,
                 expected,
             );
+        }
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_read_record() -> error::Result<()> {
+        let csv =
+            "french,chinese\nReine-Mère de l'Ouest,西王母\nEmpereur du Pic de l'Est,东华帝君\r\n";
+
+        let expected = vec![
+            srec!["french", "chinese"],
+            srec!["Reine-Mère de l'Ouest", "西王母"],
+            srec!["Empereur du Pic de l'Est", "东华帝君"],
+        ];
+
+        for capacity in [32usize, 4, 3, 2, 1] {
+            let mut reader = ReaderBuilder::with_capacity(capacity)
+                .has_headers(false)
+                .from_reader(Cursor::new(csv));
+
+            assert_eq!(reader.records().collect::<Result<Vec<_>, _>>()?, expected,);
         }
 
         Ok(())
