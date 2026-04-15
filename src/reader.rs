@@ -842,11 +842,19 @@ mod tests {
     // fn test_weird_sequence() -> error::Result<()> {
     //     let data = b"\r\r`\"\",\n,`\"\r\",\n";
     //     let mut record = ByteRecord::new();
-    //     let mut reader = ReaderBuilder::new().flexible(true).from_reader(&data[..]);
+    //     let mut reader = ReaderBuilder::new()
+    //         .flexible(true)
+    //         .has_headers(false)
+    //         .from_reader(&data[..]);
+
+    //     reader.read_byte_record(&mut record)?;
+    //     assert_eq!(record, brec!["`\"", ""]);
 
     //     reader.read_byte_record(&mut record)?;
 
-    //     assert_eq!(record, brec!["\r\r`\"\"", ""]);
+    //     dbg!(&record);
+
+    //     assert_eq!(record, brec!["`\"", ""]);
 
     //     Ok(())
     // }
