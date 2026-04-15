@@ -840,11 +840,11 @@ mod tests {
 
     // #[test]
     // fn test_fuzzing_failures() -> error::Result<()> {
-    //     let data = [113u8, 10, 11, 44];
+    //     let data = [13u8, 13, 96, 34, 34, 44, 10, 44, 96, 34, 13, 34, 44, 10];
     //     let mut record = ByteRecord::new();
-    //     let mut reader = Reader::from_reader(&data[..]);
+    //     let mut reader = ReaderBuilder::new().flexible(true).from_reader(&data[..]);
 
-    //     dbg!(reader.read_byte_record(&mut record)?);
+    //     dbg!(reader.read_byte_record(&mut record)?, record);
 
     //     Ok(())
     // }
