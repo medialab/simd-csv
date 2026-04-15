@@ -141,7 +141,7 @@ impl<'a> ZeroCopyByteRecord<'a> {
     /// unescaping, else a [`Cow::Borrowed`] will be returned.
     #[inline]
     pub fn unescape(&self, index: usize) -> Option<Cow<'_, [u8]>> {
-        self.unquote(index).map(|cell| {
+        self.get(index).map(|cell| {
             if let Some(trimmed) = unquoted(cell, self.quote) {
                 unescape(trimmed, self.quote)
             } else {

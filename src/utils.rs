@@ -155,6 +155,14 @@ mod tests {
     use super::*;
 
     #[test]
+    fn test_unquoted() {
+        assert_eq!(
+            unquoted(b"\"\"\"98469465\"\",\"", b'\"'),
+            Some(b"\"\"98469465\"\",".as_ref())
+        );
+    }
+
+    #[test]
     fn test_unescape() {
         assert_eq!(unescape(b"test", b'"'), Cow::Borrowed(b"test"));
         assert_eq!(
@@ -178,6 +186,11 @@ mod tests {
         assert_eq!(
             unescape(b"goettigen\"whatever", b'"'),
             Cow::<[u8]>::Owned(b"goettigen\"whatever".to_vec())
+        );
+
+        assert_eq!(
+            unescape(b"\"\"98469465\"\",", b'\"'),
+            Cow::<[u8]>::Owned(b"\"98469465\",".to_vec())
         );
     }
 
