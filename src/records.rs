@@ -139,7 +139,7 @@ impl<'a> ZeroCopyByteRecord<'a> {
     /// A [`Cow::Owned`] will be returned if the field actually needed
     /// unescaping, else a [`Cow::Borrowed`] will be returned.
     #[inline]
-    pub fn unescape(&self, index: usize) -> Option<Cow<[u8]>> {
+    pub fn unescape(&self, index: usize) -> Option<Cow<'_, [u8]>> {
         self.unquote(index).map(|cell| {
             if let Some(trimmed) = unquoted(cell, self.quote) {
                 unescape(trimmed, self.quote)
@@ -610,33 +610,72 @@ impl<'r> ByteRecordBuilder<'r> {
     }
 }
 
+/// An owned, decoded & unquoted/unescaped representation of a CSV record.
+///
+/// [`StringRecord`] are typically used with a [`Reader`](crate::Reader).
+///
+/// *Creating a [`StringRecord`]*:
+/// ```
+/// use simd_csv::StringRecord;
+///
+/// let mut record = StringRecord::new();
+/// record.push_field("john");
+/// record.push_field("landis");
+/// ```
+#[derive(Default, Clone, Eq)]
 pub struct StringRecord {
     inner: ByteRecord,
 }
 
 impl StringRecord {
+    /// Create an empty record
     pub fn new() -> Self {
         Self {
             inner: ByteRecord::new(),
         }
     }
 
+    #[inline(always)]
     pub(crate) fn as_inner_mut(&mut self) -> &mut ByteRecord {
         &mut self.inner
     }
 
+    #[inline]
     pub(crate) fn validate_utf8(&mut self) -> bool {
         let bytes = self.inner.as_slice();
 
+        // NOTE: we need to bench this more rigorously
         if bytes.is_ascii() {
             true
-        } else if let Err(_) = simdutf8::basic::from_utf8(bytes) {
+        } else if simdutf8::basic::from_utf8(bytes).is_err() {
             // NOTE: we clear so we don't leave the record in an invalid state!
             self.inner.clear();
             false
         } else {
             true
         }
+    }
+
+    /// Return field at `index`. Will return `None` if `index` is out of bounds.
+    #[inline]
+    pub fn get(&self, index: usize) -> Option<&str> {
+        self.inner.get(index).map(|slice| {
+            debug_assert!(std::str::from_utf8(slice).is_ok());
+            unsafe { std::str::from_utf8_unchecked(slice) }
+        })
+    }
+
+    /// Append a new field to the back of the record.
+    #[inline(always)]
+    pub fn push_field(&mut self, field: &str) {
+        self.as_inner_mut().push_field(field.as_bytes());
+    }
+}
+
+impl PartialEq for StringRecord {
+    #[inline(always)]
+    fn eq(&self, other: &Self) -> bool {
+        self.inner.eq(&other.inner)
     }
 }
 

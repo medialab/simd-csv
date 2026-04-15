@@ -42,7 +42,7 @@ pub fn unquoted(cell: &[u8], quote: u8) -> Option<&[u8]> {
 /// [`Cow::Owned`] if something was actually unescaped.
 ///
 /// This function will therefore not allocate if this is not actually required.
-pub fn unescape(cell: &[u8], quote: u8) -> Cow<[u8]> {
+pub fn unescape(cell: &[u8], quote: u8) -> Cow<'_, [u8]> {
     let len = cell.len();
     let mut output = Vec::new();
 
