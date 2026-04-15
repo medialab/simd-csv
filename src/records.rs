@@ -4,6 +4,7 @@ use std::hash::{Hash, Hasher};
 use std::ops::Index;
 
 use crate::debug;
+use crate::error::{self, Error, ErrorKind};
 use crate::utils::{trim_trailing_crlf, unescape, unescape_to, unquoted};
 
 /// A view of a CSV record into a [`ZeroCopyReader`](crate::ZeroCopyReader) buffer.
@@ -392,6 +393,17 @@ impl ByteRecord {
             .map(|(start, end)| &self.data[start..end])
     }
 
+    /// Attempt to decode given byte record.
+    pub fn into_string_record(self) -> error::Result<StringRecord> {
+        let mut new_record = StringRecord { inner: self };
+
+        if !new_record.validate_utf8() {
+            Err(Error::new(ErrorKind::Utf8Error))
+        } else {
+            Ok(new_record)
+        }
+    }
+
     pub(crate) fn reverse(&mut self) {
         self.data.reverse();
         self.bounds.reverse();
@@ -636,6 +648,12 @@ impl StringRecord {
         Self {
             inner: ByteRecord::new(),
         }
+    }
+
+    /// Return a reference to the underlying [`ByteRecord`] backing this record.
+    #[inline(always)]
+    pub fn as_byte_record(&self) -> &ByteRecord {
+        &self.inner
     }
 
     /// Return the number of fields of the record.
