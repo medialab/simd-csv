@@ -586,11 +586,14 @@ impl<'r> ByteRecordBuilder<'r> {
 
     #[inline]
     pub(crate) fn finalize_record(&mut self) {
-        if let Some(b'\r') = self.record.data.last() {
-            self.record.data.pop();
-        }
-
         self.finalize_field();
+
+        if let Some((start, end)) = self.record.bounds.last_mut() {
+            if let Some(b'\r') = self.record.data[*start..*end].last() {
+                *end -= 1;
+                self.record.data.pop();
+            }
+        }
     }
 
     #[inline]

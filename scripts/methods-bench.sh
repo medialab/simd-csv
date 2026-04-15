@@ -15,9 +15,9 @@ echo Baseline
 $TIME $PROG baseline $1 > /dev/null
 echo
 
-echo String Baseline
-$TIME $PROG string-baseline $1 > /dev/null
-echo
+# echo String Baseline
+# $TIME $PROG string-baseline $1 > /dev/null
+# echo
 
 echo SIMD
 $TIME $PROG simd $1 > /dev/null

@@ -838,26 +838,24 @@ mod tests {
         Ok(())
     }
 
-    // #[test]
-    // fn test_weird_sequence() -> error::Result<()> {
-    //     let data = b"\r\r`\"\",\n,`\"\r\",\n";
-    //     let mut record = ByteRecord::new();
-    //     let mut reader = ReaderBuilder::new()
-    //         .flexible(true)
-    //         .has_headers(false)
-    //         .from_reader(&data[..]);
+    #[test]
+    fn test_weird_sequence() -> error::Result<()> {
+        let data = b"\r\r`\"\",\n,`\"\r\",\n";
+        let mut record = ByteRecord::new();
+        let mut reader = ReaderBuilder::new()
+            .flexible(true)
+            .has_headers(false)
+            .from_reader(&data[..]);
 
-    //     reader.read_byte_record(&mut record)?;
-    //     assert_eq!(record, brec!["`\"", ""]);
+        reader.read_byte_record(&mut record)?;
+        assert_eq!(record, brec!["`\"", ""]);
 
-    //     reader.read_byte_record(&mut record)?;
+        reader.read_byte_record(&mut record)?;
 
-    //     dbg!(&record);
+        assert_eq!(record, brec!["", "\"\r", ""]);
 
-    //     assert_eq!(record, brec!["`\"", ""]);
-
-    //     Ok(())
-    // }
+        Ok(())
+    }
 
     // #[test]
     // fn test_fuzzing_failures() -> error::Result<()> {
