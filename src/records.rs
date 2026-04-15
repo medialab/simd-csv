@@ -744,6 +744,31 @@ impl Index<usize> for StringRecord {
     }
 }
 
+impl<T: AsRef<str>> Extend<T> for StringRecord {
+    #[inline]
+    fn extend<I: IntoIterator<Item = T>>(&mut self, iter: I) {
+        let iter = iter.into_iter();
+        let size_hint = iter.size_hint();
+
+        self.inner
+            .bounds
+            .reserve(size_hint.1.unwrap_or(size_hint.0));
+
+        for x in iter {
+            self.push_field(x.as_ref());
+        }
+    }
+}
+
+impl<T: AsRef<str>> FromIterator<T> for StringRecord {
+    #[inline]
+    fn from_iter<I: IntoIterator<Item = T>>(iter: I) -> Self {
+        let mut record = Self::new();
+        record.extend(iter);
+        record
+    }
+}
+
 impl<'r> IntoIterator for &'r StringRecord {
     type IntoIter = StringRecordIter<'r>;
     type Item = &'r str;
