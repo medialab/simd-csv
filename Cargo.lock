@@ -116,6 +116,11 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "b05b61dc5112cbb17e4b6cd61790d9845d13888356391624cbe7e41efeac1e75"
 
 [[package]]
+name = "csimdv"
+version = "0.1.0"
+source = "git+https://github.com/juliusgeo/csimdv-rs.git#84f8dc7f5469d304dbd5d80d16d76d46bb61cdc3"
+
+[[package]]
 name = "csv"
 version = "1.3.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -247,6 +252,7 @@ dependencies = [
  "anyhow",
  "bstr",
  "clap",
+ "csimdv",
  "csv",
  "memchr",
  "memmap2",

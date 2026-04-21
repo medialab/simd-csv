@@ -30,7 +30,8 @@ do
     "$PROG baseline $path" \
     "$PROG simd $path" \
     "$PROG zero-copy $path" \
-    "$PROG copy $path"
+    "$PROG copy $path" \
+    "$PROG c-simd-v $path"
 
   printf %"$(tput cols)"s | tr " " "-"
   echo
