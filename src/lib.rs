@@ -349,6 +349,7 @@ macro_rules! srec {
     }};
 }
 
+pub mod binary;
 mod buffer;
 mod core;
 mod debug;

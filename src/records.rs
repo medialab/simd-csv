@@ -340,6 +340,11 @@ impl ByteRecord {
         &self.data
     }
 
+    #[inline]
+    pub(crate) fn as_parts(&self) -> (&[(usize, usize)], &[u8]) {
+        (&self.bounds, &self.data)
+    }
+
     /// Return an iterator over the record's fields.
     #[inline]
     pub fn iter(&self) -> ByteRecordIter<'_> {

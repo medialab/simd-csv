@@ -85,7 +85,7 @@ impl WriterBuilder {
         Writer {
             delimiter: self.delimiter,
             quote: self.quote,
-            buffer: BufWriter::with_capacity(self.buffer_capacity, writer),
+            buf_writer: BufWriter::with_capacity(self.buffer_capacity, writer),
             flexible: self.flexible,
             field_count: None,
             must_quote,
@@ -103,7 +103,7 @@ impl WriterBuilder {
 pub struct Writer<W: Write> {
     delimiter: u8,
     quote: u8,
-    buffer: BufWriter<W>,
+    buf_writer: BufWriter<W>,
     flexible: bool,
     field_count: Option<usize>,
     must_quote: [bool; 256],
@@ -122,7 +122,7 @@ impl<W: Write> Writer<W> {
     /// Flush the underlying [`BufWriter`].
     #[inline(always)]
     pub fn flush(&mut self) -> io::Result<()> {
-        self.buffer.flush()
+        self.buf_writer.flush()
     }
 
     #[inline]
@@ -172,7 +172,7 @@ impl<W: Write> Writer<W> {
             if first {
                 first = false;
             } else {
-                self.buffer.write_all(&[self.delimiter])?;
+                self.buf_writer.write_all(&[self.delimiter])?;
             }
 
             let cell = cell.as_ref();
@@ -181,18 +181,18 @@ impl<W: Write> Writer<W> {
                 empty = true;
             }
 
-            self.buffer.write_all(cell)?;
+            self.buf_writer.write_all(cell)?;
 
             written += 1;
         }
 
         if written == 1 && empty {
-            self.buffer.write_all(&[self.quote, self.quote])?;
+            self.buf_writer.write_all(&[self.quote, self.quote])?;
         }
 
         self.check_field_count(written)?;
 
-        self.buffer.write_all(b"\n")?;
+        self.buf_writer.write_all(b"\n")?;
 
         Ok(())
     }
@@ -228,7 +228,7 @@ impl<W: Write> Writer<W> {
     }
 
     fn write_quoted_cell(&mut self, cell: &[u8]) -> error::Result<()> {
-        self.buffer.write_all(&[self.quote])?;
+        self.buf_writer.write_all(&[self.quote])?;
 
         let mut i: usize = 0;
 
@@ -236,12 +236,12 @@ impl<W: Write> Writer<W> {
             while i < cell.len() {
                 match cell[i..].iter().copied().position(|b| b == self.quote) {
                     None => {
-                        self.buffer.write_all(&cell[i..])?;
+                        self.buf_writer.write_all(&cell[i..])?;
                         break;
                     }
                     Some(offset) => {
-                        self.buffer.write_all(&cell[i..i + offset + 1])?;
-                        self.buffer.write_all(&[self.quote])?;
+                        self.buf_writer.write_all(&cell[i..i + offset + 1])?;
+                        self.buf_writer.write_all(&[self.quote])?;
                         i += offset + 1;
                     }
                 }
@@ -250,19 +250,19 @@ impl<W: Write> Writer<W> {
             while i < cell.len() {
                 match memchr(self.quote, &cell[i..]) {
                     None => {
-                        self.buffer.write_all(&cell[i..])?;
+                        self.buf_writer.write_all(&cell[i..])?;
                         break;
                     }
                     Some(offset) => {
-                        self.buffer.write_all(&cell[i..i + offset + 1])?;
-                        self.buffer.write_all(&[self.quote])?;
+                        self.buf_writer.write_all(&cell[i..i + offset + 1])?;
+                        self.buf_writer.write_all(&[self.quote])?;
                         i += offset + 1;
                     }
                 };
             }
         }
 
-        self.buffer.write_all(&[self.quote])?;
+        self.buf_writer.write_all(&[self.quote])?;
 
         Ok(())
     }
@@ -284,7 +284,7 @@ impl<W: Write> Writer<W> {
             if first {
                 first = false;
             } else {
-                self.buffer.write_all(&[self.delimiter])?;
+                self.buf_writer.write_all(&[self.delimiter])?;
             }
 
             let cell = cell.as_ref();
@@ -296,19 +296,19 @@ impl<W: Write> Writer<W> {
             if self.should_quote(cell) {
                 self.write_quoted_cell(cell)?;
             } else {
-                self.buffer.write_all(cell)?;
+                self.buf_writer.write_all(cell)?;
             }
 
             written += 1;
         }
 
         if written == 1 && empty {
-            self.buffer.write_all(&[self.quote, self.quote])?;
+            self.buf_writer.write_all(&[self.quote, self.quote])?;
         }
 
         self.check_field_count(written)?;
 
-        self.buffer.write_all(b"\n")?;
+        self.buf_writer.write_all(b"\n")?;
 
         Ok(())
     }
@@ -329,8 +329,8 @@ impl<W: Write> Writer<W> {
     /// [`Splitter.split_record`](crate::Splitter::split_record).
     #[inline(always)]
     pub fn write_splitted_record(&mut self, record: &[u8]) -> error::Result<()> {
-        self.buffer.write_all(record)?;
-        self.buffer.write_all(b"\n")?;
+        self.buf_writer.write_all(record)?;
+        self.buf_writer.write_all(b"\n")?;
 
         Ok(())
     }
@@ -339,7 +339,7 @@ impl<W: Write> Writer<W> {
     /// returning the original writer.
     #[inline]
     pub fn into_inner(self) -> Result<W, IntoInnerError<BufWriter<W>>> {
-        self.buffer.into_inner()
+        self.buf_writer.into_inner()
     }
 }
 
