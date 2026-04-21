@@ -1,4 +1,4 @@
-use std::io::{self, BufReader, BufWriter, IntoInnerError, Read, Write};
+use std::io::{self, BufWriter, IntoInnerError, Read, Write};
 
 use crate::records::ByteRecord;
 
@@ -8,6 +8,8 @@ use crate::records::ByteRecord;
 ///
 /// The binary format is currently the following:
 /// [bounds_len: u32][data_len: u32][bound_0_start: u32][bound_0_end: u32]...[data: bytes]
+///
+/// This should not be used yet as it is ironically slower than CSV parsing...
 
 /// A writer variant able to write [`ByteRecord`] using a faster, binary
 /// serialization format.
@@ -56,63 +58,74 @@ impl<W: Write> BinaryWriter<W> {
 }
 
 pub struct BinaryReader<R> {
-    buf_reader: BufReader<R>,
+    inner: R,
+    buffer: Vec<u8>,
 }
 
 impl<R: Read> BinaryReader<R> {
     pub fn from_reader(reader: R) -> Self {
         Self {
-            buf_reader: BufReader::with_capacity(8192, reader),
-        }
-    }
-
-    fn try_read_exact(&mut self, record: &mut ByteRecord, buf: &mut [u8]) -> io::Result<bool> {
-        match self.buf_reader.read_exact(buf) {
-            Ok(()) => Ok(true),
-            Err(err) if err.kind() == io::ErrorKind::UnexpectedEof => {
-                // NOTE: we don't leave the record in an invalid state!
-                record.clear();
-                Ok(false)
-            }
-            Err(err) => {
-                // NOTE: we don't leave the record in an invalid state!
-                record.clear();
-                Err(err)
-            }
+            inner: reader,
+            buffer: Vec::new(),
         }
     }
 
     pub fn read_byte_record(&mut self, record: &mut ByteRecord) -> io::Result<bool> {
         record.clear();
 
-        let mut u32_buffer = [0u8; 4];
+        let mut counts_buffer = [0u8; 8];
 
-        if !self.try_read_exact(record, &mut u32_buffer)? {
-            return Ok(false);
+        match self.inner.read_exact(&mut counts_buffer) {
+            Ok(()) => (),
+            Err(err) if err.kind() == io::ErrorKind::UnexpectedEof => {
+                // NOTE: we don't leave the record in an invalid state!
+                record.clear();
+                return Ok(false);
+            }
+            Err(err) => {
+                // NOTE: we don't leave the record in an invalid state!
+                record.clear();
+                return Err(err);
+            }
         }
 
-        let bounds_len = u32::from_le_bytes(u32_buffer) as usize;
+        let [b1, b2, b3, b4, d1, d2, d3, d4] = counts_buffer;
+
+        let bounds_len = u32::from_le_bytes([b1, b2, b3, b4]) as usize;
+        let data_len = u32::from_le_bytes([d1, d2, d3, d4]) as usize;
+
         record.bounds.reserve(bounds_len);
-
-        if !self.try_read_exact(record, &mut u32_buffer)? {
-            return Ok(false);
-        }
-
-        let data_len = u32::from_le_bytes(u32_buffer) as usize;
+        self.buffer.reserve(bounds_len * 8);
         record.data.reserve(data_len);
 
-        // TODO: we probably need to validate the bounds, to avoid issues
-        // with malformed streams!
-        for _ in 0..bounds_len {
-            if !self.try_read_exact(record, &mut u32_buffer)? {
-                return Ok(false);
-            }
-            let start = u32::from_le_bytes(u32_buffer);
+        unsafe {
+            self.buffer.set_len(bounds_len * 8);
+        }
 
-            if !self.try_read_exact(record, &mut u32_buffer)? {
+        match self.inner.read_exact(&mut self.buffer) {
+            Ok(()) => (),
+            Err(err) if err.kind() == io::ErrorKind::UnexpectedEof => {
+                // NOTE: we don't leave the record in an invalid state!
+                record.clear();
                 return Ok(false);
             }
-            let end = u32::from_le_bytes(u32_buffer);
+            Err(err) => {
+                // NOTE: we don't leave the record in an invalid state!
+                record.clear();
+                return Err(err);
+            }
+        }
+
+        // TODO: we probably need to validate the bounds, to avoid issues
+        // with malformed streams!, we can easily display fine-grained errors here
+        for i in 0..bounds_len {
+            let mut s = i * 8;
+
+            let start = u32::from_le_bytes(self.buffer[s..s + 4].try_into().unwrap());
+
+            s += 4;
+
+            let end = u32::from_le_bytes(self.buffer[s..s + 4].try_into().unwrap());
 
             record.bounds.push((start as usize, end as usize));
         }
@@ -121,7 +134,7 @@ impl<R: Read> BinaryReader<R> {
             record.data.set_len(data_len);
         }
 
-        match self.buf_reader.read_exact(&mut record.data[..data_len]) {
+        match self.inner.read_exact(&mut record.data) {
             Ok(()) => Ok(true),
             Err(err) if err.kind() == io::ErrorKind::UnexpectedEof => {
                 // NOTE: we don't leave the record in an invalid state!
