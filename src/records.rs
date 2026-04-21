@@ -352,8 +352,8 @@ impl ByteRecord {
 
     /// Append a new field to the back of the record.
     #[inline(always)]
-    pub fn push_field(&mut self, bytes: &[u8]) {
-        self.data.extend_from_slice(bytes);
+    pub fn push_field(&mut self, bytes: impl AsRef<[u8]>) {
+        self.data.extend_from_slice(bytes.as_ref());
 
         let bounds_len = self.bounds.len();
 
