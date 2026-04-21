@@ -287,8 +287,8 @@ impl Index<usize> for ZeroCopyByteRecord<'_> {
 /// ```
 #[derive(Default, Clone, Eq)]
 pub struct ByteRecord {
-    data: Vec<u8>,
-    bounds: Vec<(usize, usize)>,
+    pub(crate) data: Vec<u8>,
+    pub(crate) bounds: Vec<(usize, usize)>,
 }
 
 impl ByteRecord {

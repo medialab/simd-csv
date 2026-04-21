@@ -15,6 +15,7 @@ enum CountingMode {
     StringCopy,
     MmapCopy,
     Lines,
+    Binary,
 }
 
 #[derive(Parser, Debug)]
@@ -209,6 +210,19 @@ fn main() -> anyhow::Result<()> {
             let mut reader = simd_csv::LineReader::from_reader(file);
 
             println!("{}", reader.count_lines()?);
+        }
+        CountingMode::Binary => {
+            let file = File::open(&args.path)?;
+
+            let mut reader = simd_csv::binary::BinaryReader::from_reader(file);
+            let mut record = simd_csv::ByteRecord::new();
+            let mut count: u64 = 0;
+
+            while reader.read_byte_record(&mut record)? {
+                count += 1;
+            }
+
+            println!("{}", count);
         }
     }
 

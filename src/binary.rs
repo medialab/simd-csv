@@ -1,4 +1,4 @@
-use std::io::{self, BufWriter, IntoInnerError, Write};
+use std::io::{self, BufReader, BufWriter, IntoInnerError, Read, Write};
 
 use crate::records::ByteRecord;
 
@@ -55,18 +55,99 @@ impl<W: Write> BinaryWriter<W> {
     }
 }
 
-pub struct BinaryReader {}
+pub struct BinaryReader<R> {
+    buf_reader: BufReader<R>,
+}
+
+impl<R: Read> BinaryReader<R> {
+    pub fn from_reader(reader: R) -> Self {
+        Self {
+            buf_reader: BufReader::with_capacity(8192, reader),
+        }
+    }
+
+    fn try_read_exact(&mut self, record: &mut ByteRecord, buf: &mut [u8]) -> io::Result<bool> {
+        match self.buf_reader.read_exact(buf) {
+            Ok(()) => Ok(true),
+            Err(err) if err.kind() == io::ErrorKind::UnexpectedEof => {
+                // NOTE: we don't leave the record in an invalid state!
+                record.clear();
+                Ok(false)
+            }
+            Err(err) => {
+                // NOTE: we don't leave the record in an invalid state!
+                record.clear();
+                Err(err)
+            }
+        }
+    }
+
+    pub fn read_byte_record(&mut self, record: &mut ByteRecord) -> io::Result<bool> {
+        record.clear();
+
+        let mut u32_buffer = [0u8; 4];
+
+        if !self.try_read_exact(record, &mut u32_buffer)? {
+            return Ok(false);
+        }
+
+        let bounds_len = u32::from_le_bytes(u32_buffer) as usize;
+        record.bounds.reserve(bounds_len);
+
+        if !self.try_read_exact(record, &mut u32_buffer)? {
+            return Ok(false);
+        }
+
+        let data_len = u32::from_le_bytes(u32_buffer) as usize;
+        record.data.reserve(data_len);
+
+        // TODO: we probably need to validate the bounds, to avoid issues
+        // with malformed streams!
+        for _ in 0..bounds_len {
+            if !self.try_read_exact(record, &mut u32_buffer)? {
+                return Ok(false);
+            }
+            let start = u32::from_le_bytes(u32_buffer);
+
+            if !self.try_read_exact(record, &mut u32_buffer)? {
+                return Ok(false);
+            }
+            let end = u32::from_le_bytes(u32_buffer);
+
+            record.bounds.push((start as usize, end as usize));
+        }
+
+        unsafe {
+            record.data.set_len(data_len);
+        }
+
+        match self.buf_reader.read_exact(&mut record.data[..data_len]) {
+            Ok(()) => Ok(true),
+            Err(err) if err.kind() == io::ErrorKind::UnexpectedEof => {
+                // NOTE: we don't leave the record in an invalid state!
+                record.clear();
+                Ok(false)
+            }
+            Err(err) => {
+                // NOTE: we don't leave the record in an invalid state!
+                record.clear();
+                Err(err)
+            }
+        }
+    }
+}
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::error;
 
     #[test]
-    fn test_writer() {
+    fn test_writer() -> error::Result<()> {
         let record = brec!["john", "landis"];
         let buffer: Vec<u8> = vec![];
         let mut writer = BinaryWriter::from_writer(buffer);
-        writer.write_byte_record(&record).unwrap();
+        writer.write_byte_record(&record)?;
 
         let buffer = writer.into_inner().unwrap();
 
@@ -76,6 +157,34 @@ mod tests {
                 2, 0, 0, 0, 10, 0, 0, 0, 0, 0, 0, 0, 4, 0, 0, 0, 4, 0, 0, 0, 10, 0, 0, 0, 106, 111,
                 104, 110, 108, 97, 110, 100, 105, 115,
             ]
-        )
+        );
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_reader() -> error::Result<()> {
+        let records = vec![brec!["john", "landis"], brec!["beatriz", "babka"]];
+        let buffer: Vec<u8> = vec![];
+        let mut writer = BinaryWriter::from_writer(buffer);
+
+        for record in &records {
+            writer.write_byte_record(record)?;
+        }
+
+        let buffer = writer.into_inner().unwrap();
+
+        let mut reader = BinaryReader::from_reader(&buffer[..]);
+
+        let mut out_records = vec![];
+        let mut record = ByteRecord::new();
+
+        while reader.read_byte_record(&mut record)? {
+            out_records.push(record.clone());
+        }
+
+        assert_eq!(&out_records, &records);
+
+        Ok(())
     }
 }
