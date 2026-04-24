@@ -356,9 +356,9 @@ impl ByteRecord {
         }
     }
 
-    /// Append a new field to the back of the record.
+    /// Push a new field to the back of the record.
     #[inline(always)]
-    pub fn push_field(&mut self, bytes: impl AsRef<[u8]>) {
+    pub fn push_field(&mut self, bytes: &[u8]) {
         self.data.extend_from_slice(bytes.as_ref());
 
         let bounds_len = self.bounds.len();
@@ -372,8 +372,8 @@ impl ByteRecord {
         self.bounds.push((start, self.data.len()));
     }
 
-    /// Append a new field by formatting the given [`fmt::Display`] target into
-    /// this record's bytes directly.
+    /// Push a new field to the back of the record by formatting given [`fmt::Display`]
+    /// target into this record's bytes directly.
     #[inline]
     pub fn fmt_field<F: fmt::Display>(&mut self, target: &F) {
         write!(&mut self.data, "{}", target).unwrap();
@@ -389,12 +389,14 @@ impl ByteRecord {
         self.bounds.push((start, self.data.len()));
     }
 
+    /// Push a new field to the back of the record by writing to this record's back
+    /// directly using a callback.
     #[inline]
-    pub fn write_field<F, E>(&mut self, callback: F) -> Result<(), E>
+    pub fn write_field<F>(&mut self, callback: F)
     where
-        F: FnOnce(&mut Vec<u8>) -> Result<(), E>,
+        F: FnOnce(&mut Vec<u8>),
     {
-        callback(&mut self.data)?;
+        callback(&mut self.data);
 
         let bounds_len = self.bounds.len();
 
@@ -405,8 +407,6 @@ impl ByteRecord {
         };
 
         self.bounds.push((start, self.data.len()));
-
-        Ok(())
     }
 
     #[inline]
@@ -942,11 +942,9 @@ mod tests {
     fn test_write_field() {
         let mut record = ByteRecord::new();
 
-        record
-            .write_field(|bytes| serde_json::to_writer(bytes, &vec!["hello", "world"]))
-            .unwrap();
+        record.write_field(|bytes| serde_json::to_writer(bytes, &vec!["hello", "world"]).unwrap());
 
-        record.push_field("test");
+        record.push_field(b"test");
 
         assert_eq!(record, brec!["[\"hello\",\"world\"]", "test"]);
     }
