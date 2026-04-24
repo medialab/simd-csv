@@ -390,6 +390,26 @@ impl ByteRecord {
     }
 
     #[inline]
+    pub fn write_field<F, E>(&mut self, callback: F) -> Result<(), E>
+    where
+        F: FnOnce(&mut Vec<u8>) -> Result<(), E>,
+    {
+        callback(&mut self.data)?;
+
+        let bounds_len = self.bounds.len();
+
+        let start = if bounds_len == 0 {
+            0
+        } else {
+            self.bounds[bounds_len - 1].1
+        };
+
+        self.bounds.push((start, self.data.len()));
+
+        Ok(())
+    }
+
+    #[inline]
     fn push_field_in_reverse(&mut self, bytes: &[u8]) {
         self.data.extend_from_slice(bytes);
 
@@ -916,6 +936,19 @@ mod tests {
         record.fmt_field(&"test");
 
         assert_eq!(record, brec!["45", "5.6", "test"]);
+    }
+
+    #[test]
+    fn test_write_field() {
+        let mut record = ByteRecord::new();
+
+        record
+            .write_field(|bytes| serde_json::to_writer(bytes, &vec!["hello", "world"]))
+            .unwrap();
+
+        record.push_field("test");
+
+        assert_eq!(record, brec!["[\"hello\",\"world\"]", "test"]);
     }
 
     #[test]
