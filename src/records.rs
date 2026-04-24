@@ -1,6 +1,7 @@
 use std::borrow::Cow;
 use std::fmt;
 use std::hash::{Hash, Hasher};
+use std::io::Write;
 use std::ops::Index;
 
 use crate::debug;
@@ -359,6 +360,23 @@ impl ByteRecord {
     #[inline(always)]
     pub fn push_field(&mut self, bytes: impl AsRef<[u8]>) {
         self.data.extend_from_slice(bytes.as_ref());
+
+        let bounds_len = self.bounds.len();
+
+        let start = if bounds_len == 0 {
+            0
+        } else {
+            self.bounds[bounds_len - 1].1
+        };
+
+        self.bounds.push((start, self.data.len()));
+    }
+
+    /// Append a new field by formatting the given [`fmt::Display`] target into
+    /// this record's bytes directly.
+    #[inline]
+    pub fn fmt_field<F: fmt::Display>(&mut self, target: &F) {
+        write!(&mut self.data, "{}", target).unwrap();
 
         let bounds_len = self.bounds.len();
 
@@ -887,6 +905,17 @@ mod tests {
         assert_eq!(record.get(1), Some::<&[u8]>(b"surname"));
         assert_eq!(record.get(2), Some::<&[u8]>(b"age"));
         assert_eq!(record.get(3), None);
+    }
+
+    #[test]
+    fn test_fmt_field() {
+        let mut record = ByteRecord::new();
+
+        record.fmt_field(&45);
+        record.fmt_field(&5.6);
+        record.fmt_field(&"test");
+
+        assert_eq!(record, brec!["45", "5.6", "test"]);
     }
 
     #[test]
