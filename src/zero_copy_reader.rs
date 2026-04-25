@@ -3,7 +3,7 @@ use std::io::{BufReader, Read};
 use crate::buffer::ScratchBuffer;
 use crate::core::{CoreReader, ReadResult};
 use crate::error::{self, Error, ErrorKind};
-use crate::reader::{ReaderBuilder};
+use crate::reader::ReaderBuilder;
 use crate::records::{ByteRecord, ZeroCopyByteRecord};
 use crate::splitter::SplitterBuilder;
 use crate::utils::trim_bom;
@@ -126,6 +126,7 @@ impl ZeroCopyReaderBuilder {
             has_read: false,
             must_reemit_headers: !self.has_headers,
             has_headers: self.has_headers,
+            has_crlf_newlines: false,
             index: 0,
         }
     }
@@ -148,6 +149,7 @@ pub struct ZeroCopyReader<R> {
     has_read: bool,
     must_reemit_headers: bool,
     has_headers: bool,
+    has_crlf_newlines: bool,
     index: u64,
 }
 
@@ -191,9 +193,10 @@ impl<R: Read> ZeroCopyReader<R> {
         let mut headers_slice = Vec::new();
         let mut byte_headers = ByteRecord::new();
 
-        if let Some(headers) = self.read_byte_record_impl()? {
+        if let Some((has_crlf, headers)) = self.read_byte_record_impl()? {
             (headers_seps, headers_slice) = headers.to_parts();
             byte_headers = headers.to_byte_record();
+            self.has_crlf_newlines = has_crlf;
         } else {
             self.must_reemit_headers = false;
         }
@@ -221,7 +224,16 @@ impl<R: Read> ZeroCopyReader<R> {
         self.has_headers
     }
 
-    fn read_byte_record_impl(&mut self) -> error::Result<Option<ZeroCopyByteRecord<'_>>> {
+    /// Returns whether this reader seems to be reading from a stream having
+    /// CRLF newlines.
+    #[inline]
+    pub fn has_crlf_newlines(&mut self) -> error::Result<bool> {
+        self.on_first_read()?;
+
+        Ok(self.has_crlf_newlines)
+    }
+
+    fn read_byte_record_impl(&mut self) -> error::Result<Option<(bool, ZeroCopyByteRecord<'_>)>> {
         use ReadResult::*;
 
         self.buffer.reset();
@@ -252,13 +264,13 @@ impl<R: Read> ZeroCopyReader<R> {
                     self.index += 1;
                     self.check_field_count(byte, self.seps.len() + 1)?;
 
-                    let record = ZeroCopyByteRecord::new(
-                        self.buffer.flush(pos),
-                        &self.seps,
-                        self.inner.quote,
-                    );
+                    let bytes = self.buffer.flush(pos);
 
-                    return Ok(Some(record));
+                    let record = ZeroCopyByteRecord::new(bytes, &self.seps, self.inner.quote);
+
+                    let has_crlf = bytes.len().saturating_sub(2) == record.as_slice().len();
+
+                    return Ok(Some((has_crlf, record)));
                 }
             };
         }
@@ -278,6 +290,7 @@ impl<R: Read> ZeroCopyReader<R> {
         }
 
         self.read_byte_record_impl()
+            .map(|result| result.map(|(_, record)| record))
     }
 
     /// Unwrap into an optional first record (only when the reader was
@@ -427,6 +440,20 @@ mod tests {
         let mut reader = ZeroCopyReader::from_reader_no_headers(Cursor::new(b""));
         assert_eq!(reader.byte_headers()?, &brec![]);
         assert!(reader.read_byte_record()?.is_none());
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_has_crlf_newlines() -> error::Result<()> {
+        let lf_data = b"n\n1\n2\n3";
+        let crlf_data = b"n\r\n1\r\n2\r\n3";
+
+        let mut reader = ZeroCopyReader::from_reader(&lf_data[..]);
+        assert_eq!(reader.has_crlf_newlines()?, false);
+
+        let mut reader = ZeroCopyReader::from_reader(&crlf_data[..]);
+        assert_eq!(reader.has_crlf_newlines()?, true);
 
         Ok(())
     }
