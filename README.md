@@ -323,3 +323,61 @@ While the hereby crate returns:
 | john     | landis  |
 | béatrice | babka   |
 
+This caveat is also required for the [`ReverseReader`] to work correctly.
+
+## Regarding single-column CSV and empty cells
+
+As this parser will skip empty lines and not consider them as records, the only way
+to represent an empty cell in a single-column CSV stream is to quote them like so: `""`.
+
+This is not an untypical choice to make for a CSV parser. The [`csv`](https://docs.rs/csv/)
+crate made the exact same choice.
+
+This means the following CSV data:
+
+```txt
+n
+1
+
+2
+3
+```
+
+Will be parsed as:
+
+| n   |
+| --- |
+| 1   |
+| 2   |
+| 3   |
+
+While the following CSV data:
+
+```txt
+n
+1
+""
+2
+3
+```
+
+Will be parsed as:
+
+| n         |
+| ---       |
+| 1         |
+| \<empty\> |
+| 2         |
+| 3         |
+
+This choice is usually made by CSV parsers for the following reasons:
+
+1. performance
+2. to be able to handle both LF & CRLF streams seamlessly while remaining OS-agnostic.
+   It is, for instance, usually not straightforward in python to parse a CSV file written
+   on Windows from Linux etc. because the opposite choice was made (at least if you open
+   your file without using the universal newline mode). What's more, RFC 4180 does not
+   address the issue at all (it is poorly written and has other issues in any case).
+3. a lot of real-life files exhibit spurrious empty lines and this messes up parsers
+   expecting a consistent number of columns across files, when they suddenly encounter
+   a row without any column (or a single one, depending on your philosophy).

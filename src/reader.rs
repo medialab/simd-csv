@@ -839,6 +839,25 @@ mod tests {
     }
 
     #[test]
+    fn test_reverse_reader_crlf() -> error::Result<()> {
+        let data = b"name,surname\r\njohn,landis\r\nbeatrice,babka\r\nevan,michalak";
+        let mut reader = ReverseReader::from_reader(Cursor::new(data))?;
+
+        assert_eq!(
+            reader.byte_records().collect::<Result<Vec<_>, _>>()?,
+            vec![
+                brec!["evan", "michalak"],
+                brec!["beatrice", "babka"],
+                brec!["john", "landis"]
+            ]
+        );
+
+        assert_eq!(reader.byte_headers(), &brec!["name", "surname"]);
+
+        Ok(())
+    }
+
+    #[test]
     fn test_weird_sequence() -> error::Result<()> {
         let data = b"\r\r`\"\",\n,`\"\r\",\n";
         let mut record = ByteRecord::new();
