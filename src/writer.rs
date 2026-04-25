@@ -335,6 +335,11 @@ impl<W: Write> Writer<W> {
         Ok(())
     }
 
+    /// Unwrap the underlying [`BufWriter`].
+    pub fn into_bufwriter(self) -> BufWriter<W> {
+        self.buf_writer
+    }
+
     /// Attempt to unwrap the underlying [`BufWriter`] by flusing it and
     /// returning the original writer.
     #[inline]
