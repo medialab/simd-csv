@@ -11,6 +11,7 @@ pub struct WriterBuilder {
     quote: u8,
     buffer_capacity: usize,
     flexible: bool,
+    crlf: bool,
 }
 
 impl Default for WriterBuilder {
@@ -20,6 +21,7 @@ impl Default for WriterBuilder {
             quote: b'"',
             buffer_capacity: 8192,
             flexible: false,
+            crlf: false,
         }
     }
 }
@@ -57,6 +59,12 @@ impl WriterBuilder {
         self
     }
 
+    /// Indicate that the created [`Writer`] should use CRLF newlines.
+    pub fn crlf_newlines(&mut self, yes: bool) -> &mut Self {
+        self.crlf = yes;
+        self
+    }
+
     /// Set the capacity of the created [`Writer`]'s buffered writer.
     pub fn buffer_capacity(&mut self, capacity: usize) -> &mut Self {
         self.buffer_capacity = capacity;
@@ -85,6 +93,7 @@ impl WriterBuilder {
         Writer {
             delimiter: self.delimiter,
             quote: self.quote,
+            line_terminator: if self.crlf { b"\r\n" } else { b"\n" },
             buf_writer: BufWriter::with_capacity(self.buffer_capacity, writer),
             flexible: self.flexible,
             field_count: None,
@@ -103,6 +112,7 @@ impl WriterBuilder {
 pub struct Writer<W: Write> {
     delimiter: u8,
     quote: u8,
+    line_terminator: &'static [u8],
     buf_writer: BufWriter<W>,
     flexible: bool,
     field_count: Option<usize>,
@@ -192,7 +202,7 @@ impl<W: Write> Writer<W> {
 
         self.check_field_count(written)?;
 
-        self.buf_writer.write_all(b"\n")?;
+        self.buf_writer.write_all(self.line_terminator)?;
 
         Ok(())
     }
@@ -308,7 +318,7 @@ impl<W: Write> Writer<W> {
 
         self.check_field_count(written)?;
 
-        self.buf_writer.write_all(b"\n")?;
+        self.buf_writer.write_all(self.line_terminator)?;
 
         Ok(())
     }
@@ -330,7 +340,7 @@ impl<W: Write> Writer<W> {
     #[inline(always)]
     pub fn write_splitted_record(&mut self, record: &[u8]) -> error::Result<()> {
         self.buf_writer.write_all(record)?;
-        self.buf_writer.write_all(b"\n")?;
+        self.buf_writer.write_all(self.line_terminator)?;
 
         Ok(())
     }
