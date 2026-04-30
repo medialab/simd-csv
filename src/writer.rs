@@ -3,7 +3,7 @@ use std::io::{self, BufWriter, IntoInnerError, Write};
 use memchr::memchr;
 
 use crate::error::{self, Error, ErrorKind};
-use crate::records::ByteRecord;
+use crate::records::{ByteRecord, ZeroCopyByteRecord};
 
 /// Builds a [`Writer`] with given configuration.
 pub struct WriterBuilder {
@@ -327,6 +327,45 @@ impl<W: Write> Writer<W> {
     #[inline(always)]
     pub fn write_byte_record(&mut self, record: &ByteRecord) -> error::Result<()> {
         self.write_record(record.iter())
+    }
+
+    /// Write the given [`ZeroCopyByteRecord`] using a fast path if reader & writer
+    /// have matching delimiter & quote.
+    ///
+    /// A [`ZeroCopyByteRecord`] keeps track of its quote, but not the delimiter so
+    /// this one must be provided to the method.
+    #[inline]
+    pub fn write_zero_copy_byte_record(
+        &mut self,
+        delimiter: u8,
+        record: &ZeroCopyByteRecord,
+    ) -> error::Result<()> {
+        if self.delimiter == delimiter && record.quote == self.quote {
+            self.buf_writer.write_all(record.as_slice())?;
+            self.buf_writer.write_all(self.line_terminator)?;
+        } else {
+            self.write_record(record.unescaped_iter())?;
+        }
+
+        Ok(())
+    }
+
+    /// Same as [`Self::write_zero_copy_byte_record`], but only write the
+    /// given selection of cell indices.
+    #[inline]
+    pub fn write_zero_copy_byte_record_indices(
+        &mut self,
+        delimiter: u8,
+        record: &ZeroCopyByteRecord,
+        indices: &[usize],
+    ) -> error::Result<()> {
+        if self.delimiter == delimiter && record.quote == self.quote {
+            self.write_record_no_quoting(indices.iter().copied().map(|i| &record[i]))?;
+        } else {
+            self.write_record(indices.iter().copied().map(|i| record.unescape(i).unwrap()))?;
+        }
+
+        Ok(())
     }
 
     /// Write the given byte slice, as-is, without quoting/escaping, with an
