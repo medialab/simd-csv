@@ -334,17 +334,6 @@ impl<R: Read> Reader<R> {
         self.buffer.into_inner().into_inner()
     }
 
-    /// Unwrap into an optional first record (only when the reader was
-    /// configured not to interpret the first record as a header, and when the
-    /// first record was pre-buffered but not yet reemitted), and the underlying
-    /// [`BufReader`].
-    pub fn into_bufreader(self) -> (Option<ByteRecord>, BufReader<R>) {
-        (
-            self.must_reemit_headers.then_some(self.headers),
-            self.buffer.into_inner(),
-        )
-    }
-
     /// Returns the current byte offset of the reader in the wrapped stream.
     #[inline(always)]
     pub fn position(&self) -> u64 {

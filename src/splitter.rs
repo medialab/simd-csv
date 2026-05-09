@@ -1,4 +1,4 @@
-use std::io::{BufReader, Read};
+use std::io::Read;
 
 use crate::buffer::ScratchBuffer;
 use crate::core::{CoreReader, ReadResult};
@@ -239,17 +239,6 @@ impl<R: Read> Splitter<R> {
             Ok(None) => Ok(None),
             Err(err) => Err(err),
         }
-    }
-
-    /// Unwrap into an optional first record (only when the reader was
-    /// configured not to interpret the first record as a header, and when the
-    /// first record was pre-buffered but not yet reemitted), and the underlying
-    /// [`BufReader`].
-    pub fn into_bufreader(self) -> (Option<Vec<u8>>, BufReader<R>) {
-        (
-            self.must_reemit_headers.then_some(self.headers),
-            self.buffer.into_bufreader(),
-        )
     }
 
     /// Returns the current byte offset of the reader in the wrapped stream.
