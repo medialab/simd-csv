@@ -1,4 +1,4 @@
-use std::io::Read;
+use std::io::{Chain, Cursor, Read};
 
 use crate::buffer::ScratchBuffer;
 use crate::core::{CoreReader, ReadResult};
@@ -79,6 +79,7 @@ impl PeekerBuilder {
             buffer: ScratchBuffer::with_capacity(self.buffer_capacity, reader),
             inner: CoreReader::new(self.delimiter, self.quote),
             headers: ByteRecord::new(),
+            rest: Vec::new(),
             has_headers: self.has_headers,
             has_read: false,
             has_crlf_newlines: false,
@@ -92,6 +93,7 @@ pub struct Peeker<R> {
     buffer: ScratchBuffer<R>,
     inner: CoreReader,
     headers: ByteRecord,
+    rest: Vec<u8>,
     has_headers: bool,
     has_read: bool,
     has_crlf_newlines: bool,
@@ -138,6 +140,7 @@ impl<R: Read> Peeker<R> {
                         self.has_crlf_newlines = true;
                     }
 
+                    self.rest = bytes.to_vec();
                     self.headers = record.to_byte_record();
 
                     return Ok(true);
@@ -186,11 +189,22 @@ impl<R: Read> Peeker<R> {
 
     /// Attempt to read the first record of the stream without consuming related
     /// bytes.
-    #[inline]
     pub fn peek_byte_headers(&mut self) -> error::Result<&ByteRecord> {
         self.on_first_read()?;
 
         Ok(&self.headers)
+    }
+
+    pub fn into_reader(mut self) -> Chain<Cursor<Vec<u8>>, R> {
+        let bufreader = self.buffer.into_bufreader();
+
+        if !self.must_reemit_headers {
+            self.rest.clear();
+        }
+
+        self.rest.extend_from_slice(bufreader.buffer());
+
+        Cursor::new(self.rest).chain(bufreader.into_inner())
     }
 }
 
@@ -200,15 +214,50 @@ mod tests {
 
     #[test]
     fn test_peeker() -> error::Result<()> {
-        let mut peeker = Peeker::from_reader(&b"name,surname\nhello,world"[..]);
+        // LF, headers
+        let mut buffer: Vec<u8> = Vec::new();
+
+        let mut peeker = Peeker::from_reader(&b"name,surname\nhello,world\njohn,lucy"[..]);
 
         assert_eq!(peeker.peek_byte_headers()?, &brec!["name", "surname"]);
         assert_eq!(peeker.has_crlf_newlines()?, false);
 
-        let mut peeker = Peeker::from_reader(&b"name,surname\r\nhello,world"[..]);
+        peeker.into_reader().read_to_end(&mut buffer)?;
+        assert_eq!(&buffer, b"hello,world\njohn,lucy");
+
+        // CRLF, headers
+        let mut peeker = Peeker::from_reader(&b"name,surname\r\nhello,world\r\njohn,lucy"[..]);
 
         assert_eq!(peeker.peek_byte_headers()?, &brec!["name", "surname"]);
         assert_eq!(peeker.has_crlf_newlines()?, true);
+
+        buffer.clear();
+        peeker.into_reader().read_to_end(&mut buffer)?;
+        assert_eq!(&buffer, b"hello,world\r\njohn,lucy");
+
+        // LF, no headers
+        let mut peeker = PeekerBuilder::new()
+            .has_headers(false)
+            .from_reader(&b"bonjour,le monde\nhello,world\njohn,lucy"[..]);
+
+        assert_eq!(peeker.peek_byte_headers()?, &brec!["bonjour", "le monde"]);
+        assert_eq!(peeker.has_crlf_newlines()?, false);
+
+        buffer.clear();
+        peeker.into_reader().read_to_end(&mut buffer)?;
+        assert_eq!(&buffer, b"bonjour,le monde\nhello,world\njohn,lucy");
+
+        // CRLF, no headers
+        let mut peeker = PeekerBuilder::new()
+            .has_headers(false)
+            .from_reader(&b"bonjour,le monde\r\nhello,world\r\njohn,lucy"[..]);
+
+        assert_eq!(peeker.peek_byte_headers()?, &brec!["bonjour", "le monde"]);
+        assert_eq!(peeker.has_crlf_newlines()?, true);
+
+        buffer.clear();
+        peeker.into_reader().read_to_end(&mut buffer)?;
+        assert_eq!(&buffer, b"bonjour,le monde\r\nhello,world\r\njohn,lucy");
 
         Ok(())
     }
