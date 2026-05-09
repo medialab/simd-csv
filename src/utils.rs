@@ -188,6 +188,13 @@ impl<'v, T: Clone> AppendOnlyView<'v, T> {
     }
 }
 
+impl<'v, T> Extend<T> for AppendOnlyView<'v, T> {
+    #[inline(always)]
+    fn extend<I: IntoIterator<Item = T>>(&mut self, iter: I) {
+        self.inner.extend(iter);
+    }
+}
+
 impl<'v, T> Write for AppendOnlyView<'v, T>
 where
     Vec<T>: Write,
