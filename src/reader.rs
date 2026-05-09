@@ -3,8 +3,11 @@ use std::io::{BufRead, BufReader, Read, Seek, SeekFrom};
 use crate::buffer::BufReaderWithPosition;
 use crate::core::{CoreReader, ReadResult};
 use crate::error::{self, Error, ErrorKind};
-use crate::records::{ByteRecord, ByteRecordBuilder, StringRecord};
+use crate::records::{ByteRecord, ByteRecordBuilder};
 use crate::utils::{self, trim_bom};
+
+#[cfg(feature = "str")]
+use crate::records::StringRecord;
 
 /// Builds a [`Reader`] with given configuration.
 pub struct ReaderBuilder {
@@ -267,6 +270,7 @@ impl<R: Read> Reader<R> {
         self.read_byte_record_impl(record)
     }
 
+    #[cfg(feature = "str")]
     pub fn read_record(&mut self, record: &mut StringRecord) -> error::Result<bool> {
         if self.read_byte_record(record.as_inner_mut())? {
             if !record.validate_utf8() {
@@ -296,6 +300,7 @@ impl<R: Read> Reader<R> {
     }
 
     /// Return an iterator yielding [`StringRecord`] structs.
+    #[cfg(feature = "str")]
     pub fn records(&mut self) -> StringRecordsIter<'_, R> {
         StringRecordsIter {
             reader: self,
@@ -304,6 +309,7 @@ impl<R: Read> Reader<R> {
     }
 
     /// Transform the reader into an iterator yielding [`StringRecord`] structs.
+    #[cfg(feature = "str")]
     pub fn into_records(self) -> StringRecordsIntoIter<R> {
         StringRecordsIntoIter {
             reader: self,
@@ -390,11 +396,13 @@ impl<R: Read> Iterator for ByteRecordsIntoIter<R> {
     }
 }
 
+#[cfg(feature = "str")]
 pub struct StringRecordsIter<'r, R> {
     reader: &'r mut Reader<R>,
     record: StringRecord,
 }
 
+#[cfg(feature = "str")]
 impl<R: Read> Iterator for StringRecordsIter<'_, R> {
     type Item = error::Result<StringRecord>;
 
@@ -410,11 +418,13 @@ impl<R: Read> Iterator for StringRecordsIter<'_, R> {
     }
 }
 
+#[cfg(feature = "str")]
 pub struct StringRecordsIntoIter<R> {
     reader: Reader<R>,
     record: StringRecord,
 }
 
+#[cfg(feature = "str")]
 impl<R: Read> Iterator for StringRecordsIntoIter<R> {
     type Item = error::Result<StringRecord>;
 
@@ -607,6 +617,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(feature = "str")]
     fn test_read_record() -> error::Result<()> {
         let csv =
             "french,chinese\nReine-Mère de l'Ouest,西王母\nEmpereur du Pic de l'Est,东华帝君\r\n";

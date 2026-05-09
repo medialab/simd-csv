@@ -12,9 +12,11 @@ enum CountingMode {
     Mmap,
     ZeroCopy,
     Copy,
+    #[cfg(feature = "str")]
     StringCopy,
     MmapCopy,
     Lines,
+    #[cfg(feature = "binary")]
     Binary,
 }
 
@@ -173,6 +175,7 @@ fn main() -> anyhow::Result<()> {
 
             println!("{}", count);
         }
+        #[cfg(feature = "str")]
         CountingMode::StringCopy => {
             let mut reader = args.simd_buffered_reader()?;
             let mut record = simd_csv::StringRecord::new();
@@ -211,6 +214,7 @@ fn main() -> anyhow::Result<()> {
 
             println!("{}", reader.count_lines()?);
         }
+        #[cfg(feature = "binary")]
         CountingMode::Binary => {
             let file = File::open(&args.path)?;
 

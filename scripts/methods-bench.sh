@@ -2,7 +2,7 @@
 set -uoe pipefail
 
 # Building
-cargo build --release --example count
+cargo build --all-features --release --example count
 PROG=target/release/examples/count
 
 TIMEFORMAT=%3lR

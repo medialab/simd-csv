@@ -392,6 +392,7 @@ macro_rules! brec {
 }
 
 #[allow(unused_macros)]
+#[cfg(feature = "str")]
 macro_rules! srec {
     () => {{
         $crate::records::StringRecord::new()
@@ -408,6 +409,7 @@ macro_rules! srec {
     }};
 }
 
+#[cfg(feature = "binary")]
 pub mod binary;
 mod buffer;
 mod core;
@@ -430,7 +432,7 @@ pub use error::{Error, ErrorKind, Result};
 pub use line_reader::LineReader;
 pub use peeker::{Peeker, PeekerBuilder};
 pub use reader::{Reader, ReaderBuilder, ReverseReader};
-pub use records::{ByteRecord, StringRecord, ZeroCopyByteRecord};
+pub use records::{ByteRecord, ZeroCopyByteRecord};
 pub use searcher::searcher_simd_instructions;
 pub use seeker::{Seeker, SeekerBuilder};
 pub use splitter::{Splitter, SplitterBuilder};
@@ -438,3 +440,6 @@ pub use total_reader::{TotalReader, TotalReaderBuilder};
 pub use utils::{unescape, AppendOnlyView};
 pub use writer::{Writer, WriterBuilder};
 pub use zero_copy_reader::{ZeroCopyReader, ZeroCopyReaderBuilder};
+
+#[cfg(feature = "str")]
+pub use records::StringRecord;

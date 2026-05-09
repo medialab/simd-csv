@@ -5,8 +5,10 @@ use std::io::Write;
 use std::ops::Index;
 
 use crate::debug;
-use crate::error::{self, Error, ErrorKind};
 use crate::utils::{trim_trailing_crlf, unescape, unescape_to, unquoted, AppendOnlyView};
+
+#[cfg(feature = "str")]
+use crate::error::{self, Error, ErrorKind};
 
 /// A view of a CSV record into a [`ZeroCopyReader`](crate::ZeroCopyReader) buffer.
 pub struct ZeroCopyByteRecord<'a> {
@@ -342,6 +344,7 @@ impl ByteRecord {
     }
 
     #[inline]
+    #[cfg(feature = "binary")]
     pub(crate) fn as_parts(&self) -> (&[(usize, usize)], &[u8]) {
         (&self.bounds, &self.data)
     }
@@ -437,6 +440,7 @@ impl ByteRecord {
     }
 
     /// Attempt to decode given byte record.
+    #[cfg(feature = "str")]
     pub fn into_string_record(self) -> error::Result<StringRecord> {
         let mut new_record = StringRecord { inner: self };
 
@@ -668,223 +672,231 @@ impl<'r> ByteRecordBuilder<'r> {
     }
 }
 
-/// An owned, decoded & unquoted/unescaped representation of a CSV record.
-///
-/// [`StringRecord`] are typically used with a [`Reader`](crate::Reader).
-///
-/// *Creating a [`StringRecord`]*:
-/// ```
-/// use simd_csv::StringRecord;
-///
-/// let mut record = StringRecord::new();
-/// record.push_field("john");
-/// record.push_field("landis");
-/// ```
-#[derive(Default, Clone, Eq)]
-pub struct StringRecord {
-    inner: ByteRecord,
-}
+#[cfg(feature = "str")]
+mod string_record {
+    use super::*;
 
-impl StringRecord {
-    /// Create an empty record
-    pub fn new() -> Self {
-        Self {
-            inner: ByteRecord::new(),
+    /// An owned, decoded & unquoted/unescaped representation of a CSV record.
+    ///
+    /// [`StringRecord`] are typically used with a [`Reader`](crate::Reader).
+    ///
+    /// *Creating a [`StringRecord`]*:
+    /// ```
+    /// use simd_csv::StringRecord;
+    ///
+    /// let mut record = StringRecord::new();
+    /// record.push_field("john");
+    /// record.push_field("landis");
+    /// ```
+    #[derive(Default, Clone, Eq)]
+    pub struct StringRecord {
+        pub(super) inner: ByteRecord,
+    }
+
+    impl StringRecord {
+        /// Create an empty record
+        pub fn new() -> Self {
+            Self {
+                inner: ByteRecord::new(),
+            }
         }
-    }
 
-    /// Return a reference to the underlying [`ByteRecord`] backing this record.
-    #[inline(always)]
-    pub fn as_byte_record(&self) -> &ByteRecord {
-        &self.inner
-    }
+        /// Return a reference to the underlying [`ByteRecord`] backing this record.
+        #[inline(always)]
+        pub fn as_byte_record(&self) -> &ByteRecord {
+            &self.inner
+        }
 
-    /// Return the number of fields of the record.
-    #[inline(always)]
-    pub fn len(&self) -> usize {
-        self.inner.len()
-    }
+        /// Return the number of fields of the record.
+        #[inline(always)]
+        pub fn len(&self) -> usize {
+            self.inner.len()
+        }
 
-    /// Return whether the record is empty.
-    #[inline(always)]
-    pub fn is_empty(&self) -> bool {
-        self.inner.is_empty()
-    }
+        /// Return whether the record is empty.
+        #[inline(always)]
+        pub fn is_empty(&self) -> bool {
+            self.inner.is_empty()
+        }
 
-    /// Clear the record completely.
-    #[inline(always)]
-    pub fn clear(&mut self) {
-        self.inner.clear();
-    }
-
-    #[inline(always)]
-    pub(crate) fn as_inner_mut(&mut self) -> &mut ByteRecord {
-        &mut self.inner
-    }
-
-    #[inline]
-    pub(crate) fn validate_utf8(&mut self) -> bool {
-        let bytes = self.inner.as_slice();
-
-        // NOTE: we need to bench this more rigorously
-        if bytes.is_ascii() {
-            true
-        } else if simdutf8::basic::from_utf8(bytes).is_err() {
-            // NOTE: we clear so we don't leave the record in an invalid state!
+        /// Clear the record completely.
+        #[inline(always)]
+        pub fn clear(&mut self) {
             self.inner.clear();
-            false
-        } else {
-            true
+        }
+
+        #[inline(always)]
+        pub(crate) fn as_inner_mut(&mut self) -> &mut ByteRecord {
+            &mut self.inner
+        }
+
+        #[inline]
+        pub(crate) fn validate_utf8(&mut self) -> bool {
+            let bytes = self.inner.as_slice();
+
+            // NOTE: we need to bench this more rigorously
+            if bytes.is_ascii() {
+                true
+            } else if simdutf8::basic::from_utf8(bytes).is_err() {
+                // NOTE: we clear so we don't leave the record in an invalid state!
+                self.inner.clear();
+                false
+            } else {
+                true
+            }
+        }
+
+        /// Return field at `index`. Will return `None` if `index` is out of bounds.
+        #[inline]
+        pub fn get(&self, index: usize) -> Option<&str> {
+            self.inner.get(index).map(|slice| {
+                debug_assert!(std::str::from_utf8(slice).is_ok());
+                unsafe { std::str::from_utf8_unchecked(slice) }
+            })
+        }
+
+        /// Return an iterator over the record's fields.
+        #[inline]
+        pub fn iter(&self) -> StringRecordIter<'_> {
+            StringRecordIter {
+                record: &self.inner,
+                current_forward: 0,
+                current_backward: self.len(),
+            }
+        }
+
+        /// Append a new field to the back of the record.
+        #[inline(always)]
+        pub fn push_field(&mut self, field: &str) {
+            self.as_inner_mut().push_field(field.as_bytes());
         }
     }
 
-    /// Return field at `index`. Will return `None` if `index` is out of bounds.
-    #[inline]
-    pub fn get(&self, index: usize) -> Option<&str> {
-        self.inner.get(index).map(|slice| {
-            debug_assert!(std::str::from_utf8(slice).is_ok());
-            unsafe { std::str::from_utf8_unchecked(slice) }
-        })
-    }
-
-    /// Return an iterator over the record's fields.
-    #[inline]
-    pub fn iter(&self) -> StringRecordIter<'_> {
-        StringRecordIter {
-            record: &self.inner,
-            current_forward: 0,
-            current_backward: self.len(),
+    impl PartialEq for StringRecord {
+        #[inline(always)]
+        fn eq(&self, other: &Self) -> bool {
+            self.inner.eq(&other.inner)
         }
     }
 
-    /// Append a new field to the back of the record.
-    #[inline(always)]
-    pub fn push_field(&mut self, field: &str) {
-        self.as_inner_mut().push_field(field.as_bytes());
+    impl Hash for StringRecord {
+        #[inline(always)]
+        fn hash<H: Hasher>(&self, state: &mut H) {
+            self.inner.hash(state);
+        }
     }
-}
 
-impl PartialEq for StringRecord {
-    #[inline(always)]
-    fn eq(&self, other: &Self) -> bool {
-        self.inner.eq(&other.inner)
+    impl Index<usize> for StringRecord {
+        type Output = str;
+
+        #[inline]
+        fn index(&self, i: usize) -> &str {
+            self.get(i).unwrap()
+        }
     }
-}
 
-impl Hash for StringRecord {
-    #[inline(always)]
-    fn hash<H: Hasher>(&self, state: &mut H) {
-        self.inner.hash(state);
+    impl<T: AsRef<str>> Extend<T> for StringRecord {
+        #[inline]
+        fn extend<I: IntoIterator<Item = T>>(&mut self, iter: I) {
+            let iter = iter.into_iter();
+            let size_hint = iter.size_hint();
+
+            self.inner
+                .bounds
+                .reserve(size_hint.1.unwrap_or(size_hint.0));
+
+            for x in iter {
+                self.push_field(x.as_ref());
+            }
+        }
     }
-}
 
-impl Index<usize> for StringRecord {
-    type Output = str;
-
-    #[inline]
-    fn index(&self, i: usize) -> &str {
-        self.get(i).unwrap()
+    impl<T: AsRef<str>> FromIterator<T> for StringRecord {
+        #[inline]
+        fn from_iter<I: IntoIterator<Item = T>>(iter: I) -> Self {
+            let mut record = Self::new();
+            record.extend(iter);
+            record
+        }
     }
-}
 
-impl<T: AsRef<str>> Extend<T> for StringRecord {
-    #[inline]
-    fn extend<I: IntoIterator<Item = T>>(&mut self, iter: I) {
-        let iter = iter.into_iter();
-        let size_hint = iter.size_hint();
+    impl<'r> IntoIterator for &'r StringRecord {
+        type IntoIter = StringRecordIter<'r>;
+        type Item = &'r str;
 
-        self.inner
-            .bounds
-            .reserve(size_hint.1.unwrap_or(size_hint.0));
+        #[inline]
+        fn into_iter(self) -> StringRecordIter<'r> {
+            self.iter()
+        }
+    }
 
-        for x in iter {
-            self.push_field(x.as_ref());
+    impl fmt::Debug for StringRecord {
+        fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+            write!(f, "StringRecord(")?;
+            f.debug_list().entries(self.iter()).finish()?;
+            write!(f, ")")?;
+            Ok(())
+        }
+    }
+
+    pub struct StringRecordIter<'a> {
+        record: &'a ByteRecord,
+        current_forward: usize,
+        current_backward: usize,
+    }
+
+    impl ExactSizeIterator for StringRecordIter<'_> {}
+
+    impl<'a> Iterator for StringRecordIter<'a> {
+        type Item = &'a str;
+
+        #[inline]
+        fn next(&mut self) -> Option<Self::Item> {
+            if self.current_forward == self.current_backward {
+                None
+            } else {
+                let (start, end) = self.record.bounds[self.current_forward];
+
+                self.current_forward += 1;
+
+                Some(unsafe { std::str::from_utf8_unchecked(&self.record.data[start..end]) })
+            }
+        }
+
+        #[inline]
+        fn size_hint(&self) -> (usize, Option<usize>) {
+            let size = self.current_backward - self.current_forward;
+
+            (size, Some(size))
+        }
+
+        #[inline]
+        fn count(self) -> usize
+        where
+            Self: Sized,
+        {
+            self.len()
+        }
+    }
+
+    impl DoubleEndedIterator for StringRecordIter<'_> {
+        #[inline]
+        fn next_back(&mut self) -> Option<Self::Item> {
+            if self.current_forward == self.current_backward {
+                None
+            } else {
+                self.current_backward -= 1;
+
+                let (start, end) = self.record.bounds[self.current_backward];
+
+                Some(unsafe { std::str::from_utf8_unchecked(&self.record.data[start..end]) })
+            }
         }
     }
 }
 
-impl<T: AsRef<str>> FromIterator<T> for StringRecord {
-    #[inline]
-    fn from_iter<I: IntoIterator<Item = T>>(iter: I) -> Self {
-        let mut record = Self::new();
-        record.extend(iter);
-        record
-    }
-}
-
-impl<'r> IntoIterator for &'r StringRecord {
-    type IntoIter = StringRecordIter<'r>;
-    type Item = &'r str;
-
-    #[inline]
-    fn into_iter(self) -> StringRecordIter<'r> {
-        self.iter()
-    }
-}
-
-impl fmt::Debug for StringRecord {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "StringRecord(")?;
-        f.debug_list().entries(self.iter()).finish()?;
-        write!(f, ")")?;
-        Ok(())
-    }
-}
-
-pub struct StringRecordIter<'a> {
-    record: &'a ByteRecord,
-    current_forward: usize,
-    current_backward: usize,
-}
-
-impl ExactSizeIterator for StringRecordIter<'_> {}
-
-impl<'a> Iterator for StringRecordIter<'a> {
-    type Item = &'a str;
-
-    #[inline]
-    fn next(&mut self) -> Option<Self::Item> {
-        if self.current_forward == self.current_backward {
-            None
-        } else {
-            let (start, end) = self.record.bounds[self.current_forward];
-
-            self.current_forward += 1;
-
-            Some(unsafe { std::str::from_utf8_unchecked(&self.record.data[start..end]) })
-        }
-    }
-
-    #[inline]
-    fn size_hint(&self) -> (usize, Option<usize>) {
-        let size = self.current_backward - self.current_forward;
-
-        (size, Some(size))
-    }
-
-    #[inline]
-    fn count(self) -> usize
-    where
-        Self: Sized,
-    {
-        self.len()
-    }
-}
-
-impl DoubleEndedIterator for StringRecordIter<'_> {
-    #[inline]
-    fn next_back(&mut self) -> Option<Self::Item> {
-        if self.current_forward == self.current_backward {
-            None
-        } else {
-            self.current_backward -= 1;
-
-            let (start, end) = self.record.bounds[self.current_backward];
-
-            Some(unsafe { std::str::from_utf8_unchecked(&self.record.data[start..end]) })
-        }
-    }
-}
+#[cfg(feature = "str")]
+pub use string_record::*;
 
 #[cfg(test)]
 mod tests {

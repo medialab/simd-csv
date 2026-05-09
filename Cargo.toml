@@ -28,9 +28,14 @@ lto = false
 strip = false
 debug = true
 
+[features]
+default = []
+str = ["dep:simdutf8"]
+binary = []
+
 [dependencies]
 memchr = "2.7.6"
-simdutf8 = "0.1.5"
+simdutf8 = { version = "0.1.5", optional = true }
 
 [dev-dependencies]
 anyhow = "1.0.100"
