@@ -189,10 +189,18 @@ impl<R: Read> Peeker<R> {
 
     /// Attempt to read the first record of the stream without consuming related
     /// bytes.
-    pub fn peek_byte_headers(&mut self) -> error::Result<&ByteRecord> {
+    pub fn peek_byte_record(&mut self) -> error::Result<&ByteRecord> {
         self.on_first_read()?;
 
         Ok(&self.headers)
+    }
+
+    /// Attempt to return the first record of the stream as bytes without consuming
+    /// them.
+    pub fn peek(&mut self) -> error::Result<&[u8]> {
+        self.on_first_read()?;
+
+        Ok(&self.rest)
     }
 
     pub fn into_reader(mut self) -> Chain<Cursor<Vec<u8>>, R> {
@@ -219,7 +227,7 @@ mod tests {
 
         let mut peeker = Peeker::from_reader(&b"name,surname\nhello,world\njohn,lucy"[..]);
 
-        assert_eq!(peeker.peek_byte_headers()?, &brec!["name", "surname"]);
+        assert_eq!(peeker.peek_byte_record()?, &brec!["name", "surname"]);
         assert_eq!(peeker.has_crlf_newlines()?, false);
 
         peeker.into_reader().read_to_end(&mut buffer)?;
@@ -228,7 +236,7 @@ mod tests {
         // CRLF, headers
         let mut peeker = Peeker::from_reader(&b"name,surname\r\nhello,world\r\njohn,lucy"[..]);
 
-        assert_eq!(peeker.peek_byte_headers()?, &brec!["name", "surname"]);
+        assert_eq!(peeker.peek_byte_record()?, &brec!["name", "surname"]);
         assert_eq!(peeker.has_crlf_newlines()?, true);
 
         buffer.clear();
@@ -240,7 +248,7 @@ mod tests {
             .has_headers(false)
             .from_reader(&b"bonjour,le monde\nhello,world\njohn,lucy"[..]);
 
-        assert_eq!(peeker.peek_byte_headers()?, &brec!["bonjour", "le monde"]);
+        assert_eq!(peeker.peek_byte_record()?, &brec!["bonjour", "le monde"]);
         assert_eq!(peeker.has_crlf_newlines()?, false);
 
         buffer.clear();
@@ -252,7 +260,7 @@ mod tests {
             .has_headers(false)
             .from_reader(&b"bonjour,le monde\r\nhello,world\r\njohn,lucy"[..]);
 
-        assert_eq!(peeker.peek_byte_headers()?, &brec!["bonjour", "le monde"]);
+        assert_eq!(peeker.peek_byte_record()?, &brec!["bonjour", "le monde"]);
         assert_eq!(peeker.has_crlf_newlines()?, true);
 
         buffer.clear();
