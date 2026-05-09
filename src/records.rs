@@ -6,7 +6,7 @@ use std::ops::Index;
 
 use crate::debug;
 use crate::error::{self, Error, ErrorKind};
-use crate::utils::{trim_trailing_crlf, unescape, unescape_to, unquoted};
+use crate::utils::{trim_trailing_crlf, unescape, unescape_to, unquoted, AppendOnlyView};
 
 /// A view of a CSV record into a [`ZeroCopyReader`](crate::ZeroCopyReader) buffer.
 pub struct ZeroCopyByteRecord<'a> {
@@ -394,9 +394,9 @@ impl ByteRecord {
     #[inline]
     pub fn write_field<F>(&mut self, callback: F)
     where
-        F: FnOnce(&mut Vec<u8>),
+        F: FnOnce(AppendOnlyView<u8>),
     {
-        callback(&mut self.data);
+        callback(AppendOnlyView::new(&mut self.data));
 
         let bounds_len = self.bounds.len();
 

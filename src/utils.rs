@@ -1,5 +1,5 @@
 use std::borrow::Cow;
-use std::io::{self, Read, Seek, SeekFrom};
+use std::io::{self, Read, Seek, SeekFrom, Write};
 
 use memchr::memchr;
 
@@ -147,6 +147,74 @@ impl<R: Seek + Read> Read for ReverseReader<R> {
 
             Ok(buff_size as usize)
         }
+    }
+}
+
+/// A [`Vec`] mutable reference wrapper only allowing to push new stuff, but
+/// restricting everything else and that can be used to maintain some data
+/// structure invariants.
+///
+/// It also implements [`Write`], as a convenience.
+pub struct AppendOnlyView<'v, T> {
+    inner: &'v mut Vec<T>,
+}
+
+impl<'v, T> AppendOnlyView<'v, T> {
+    #[inline(always)]
+    pub(crate) fn new(inner: &'v mut Vec<T>) -> Self {
+        Self { inner }
+    }
+
+    #[inline(always)]
+    pub fn push(&mut self, value: T) {
+        self.inner.push(value);
+    }
+
+    #[inline(always)]
+    pub fn reserve(&mut self, additional: usize) {
+        self.inner.reserve(additional);
+    }
+
+    #[inline(always)]
+    pub fn reserve_exact(&mut self, additional: usize) {
+        self.inner.reserve_exact(additional);
+    }
+}
+
+impl<'v, T: Clone> AppendOnlyView<'v, T> {
+    #[inline(always)]
+    pub fn extend_from_slice(&mut self, other: &[T]) {
+        self.inner.extend_from_slice(other);
+    }
+}
+
+impl<'v, T> Write for AppendOnlyView<'v, T>
+where
+    Vec<T>: Write,
+{
+    #[inline(always)]
+    fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
+        self.inner.write(buf)
+    }
+
+    #[inline(always)]
+    fn write_all(&mut self, buf: &[u8]) -> io::Result<()> {
+        self.inner.write_all(buf)
+    }
+
+    #[inline(always)]
+    fn write_vectored(&mut self, bufs: &[io::IoSlice<'_>]) -> io::Result<usize> {
+        self.inner.write_vectored(bufs)
+    }
+
+    #[inline(always)]
+    fn write_fmt(&mut self, fmt: std::fmt::Arguments<'_>) -> io::Result<()> {
+        self.inner.write_fmt(fmt)
+    }
+
+    #[inline(always)]
+    fn flush(&mut self) -> io::Result<()> {
+        self.inner.flush()
     }
 }
 

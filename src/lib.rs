@@ -433,6 +433,6 @@ pub use searcher::searcher_simd_instructions;
 pub use seeker::{Seeker, SeekerBuilder};
 pub use splitter::{Splitter, SplitterBuilder};
 pub use total_reader::{TotalReader, TotalReaderBuilder};
-pub use utils::unescape;
+pub use utils::{unescape, AppendOnlyView};
 pub use writer::{Writer, WriterBuilder};
 pub use zero_copy_reader::{ZeroCopyReader, ZeroCopyReaderBuilder};
