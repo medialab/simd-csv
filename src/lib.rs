@@ -415,6 +415,7 @@ mod debug;
 mod error;
 mod ext;
 mod line_reader;
+mod peeker;
 mod reader;
 mod records;
 mod searcher;
@@ -427,6 +428,7 @@ mod zero_copy_reader;
 
 pub use error::{Error, ErrorKind, Result};
 pub use line_reader::LineReader;
+pub use peeker::{Peeker, PeekerBuilder};
 pub use reader::{Reader, ReaderBuilder, ReverseReader};
 pub use records::{ByteRecord, StringRecord, ZeroCopyByteRecord};
 pub use searcher::searcher_simd_instructions;
