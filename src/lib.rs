@@ -416,6 +416,7 @@ mod core;
 mod debug;
 mod error;
 mod ext;
+mod headers;
 mod line_reader;
 mod peeker;
 mod reader;
@@ -429,6 +430,7 @@ mod writer;
 mod zero_copy_reader;
 
 pub use error::{Error, ErrorKind, Result};
+pub use headers::ByteHeadersIndex;
 pub use line_reader::LineReader;
 pub use peeker::{Peeker, PeekerBuilder};
 pub use reader::{Reader, ReaderBuilder, ReverseReader};
