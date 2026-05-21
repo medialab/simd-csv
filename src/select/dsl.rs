@@ -16,6 +16,7 @@ use std::fmt;
 use std::str::FromStr;
 
 use super::selection::Selection;
+use crate::error::{Error, ErrorKind};
 
 /// A parsed selector that can be applied on CSV headers to create a
 /// [`crate::Selection`].
@@ -26,7 +27,7 @@ pub struct Selector {
 }
 
 impl FromStr for Selector {
-    type Err = String;
+    type Err = Error;
 
     fn from_str(mut s: &str) -> Result<Self, Self::Err> {
         let invert = if !s.is_empty() && s.as_bytes()[0] == b'!' {
@@ -36,7 +37,9 @@ impl FromStr for Selector {
             false
         };
         Ok(Self {
-            selectors: SelectorParser::new(s).parse()?,
+            selectors: SelectorParser::new(s)
+                .parse()
+                .map_err(|msg| Error::new(ErrorKind::SelectorParseError(msg)))?,
             invert,
         })
     }
@@ -51,7 +54,7 @@ impl Selector {
         self.invert = !self.invert;
     }
 
-    pub fn select<'a, H>(&self, first_record: H, use_names: bool) -> Result<Selection, String>
+    pub fn select<'a, H>(&self, first_record: H, use_names: bool) -> Result<Selection, Error>
     where
         H: IntoIterator<Item = &'a [u8]>,
     {
@@ -86,14 +89,16 @@ impl Selector {
         Ok(Selection::new(map, first_record.len()))
     }
 
-    pub fn select_one<'a, H>(&self, first_record: H, use_names: bool) -> Result<usize, String>
+    pub fn select_one<'a, H>(&self, first_record: H, use_names: bool) -> Result<usize, Error>
     where
         H: IntoIterator<Item = &'a [u8]>,
     {
         let selection = self.select(first_record, use_names)?;
 
         if selection.len() != 1 {
-            return Err("target selection is not a single column".to_string());
+            return Err(Error::new(ErrorKind::SelectionError(
+                "target selection is not a single column".to_string(),
+            )));
         }
 
         Ok(selection[0])
@@ -152,7 +157,7 @@ impl fmt::Debug for Selector {
 }
 
 impl TryFrom<String> for Selector {
-    type Error = String;
+    type Error = Error;
 
     fn try_from(value: String) -> Result<Self, Self::Error> {
         value.parse()
@@ -419,7 +424,7 @@ enum OneSelector {
 }
 
 impl CompositeSelector {
-    fn indices(&self, first_record: &[&[u8]], use_names: bool) -> Result<Vec<usize>, String> {
+    fn indices(&self, first_record: &[&[u8]], use_names: bool) -> Result<Vec<usize>, Error> {
         struct Map<'s> {
             inner: BTreeMap<&'s [u8], Vec<usize>>,
         }
@@ -467,11 +472,11 @@ impl CompositeSelector {
             CompositeSelector::All(pos_opt) => {
                 if let Some(pos) = pos_opt {
                     if !use_names {
-                        return Err(format!(
+                        return Err(Error::new(ErrorKind::SelectionError(format!(
                             "Cannot use '*[{}]' in selection \
                                         with --no-headers set.",
                             pos
-                        ));
+                        ))));
                     }
 
                     let mut inds = vec![];
@@ -480,7 +485,10 @@ impl CompositeSelector {
                     map.for_each(pos, |_| true, |i| inds.push(i));
 
                     if inds.is_empty() {
-                        return Err(format!("'*[{}]' selected nothing.", pos));
+                        return Err(Error::new(ErrorKind::SelectionError(format!(
+                            "'*[{}]' selected nothing.",
+                            pos
+                        ))));
                     }
 
                     Ok(inds)
@@ -509,11 +517,11 @@ impl CompositeSelector {
             CompositeSelector::GlobPrefix(ref prefix, pos_opt) => {
                 if let Some(pos) = pos_opt {
                     if !use_names {
-                        return Err(format!(
+                        return Err(Error::new(ErrorKind::SelectionError(format!(
                             "Cannot use prefix ('{}*[{}]') in selection \
                                         with --no-headers set.",
                             prefix, pos
-                        ));
+                        ))));
                     }
 
                     let mut inds = vec![];
@@ -526,17 +534,20 @@ impl CompositeSelector {
                     );
 
                     if inds.is_empty() {
-                        return Err(format!("Prefix '{}*[{}]' selected nothing.", prefix, pos));
+                        return Err(Error::new(ErrorKind::SelectionError(format!(
+                            "Prefix '{}*[{}]' selected nothing.",
+                            prefix, pos
+                        ))));
                     }
 
                     Ok(inds)
                 } else {
                     if !use_names {
-                        return Err(format!(
+                        return Err(Error::new(ErrorKind::SelectionError(format!(
                             "Cannot use prefix ('{}*') in selection \
                                         with --no-headers set.",
                             prefix
-                        ));
+                        ))));
                     }
 
                     let inds: Vec<usize> = first_record
@@ -552,7 +563,10 @@ impl CompositeSelector {
                         .collect();
 
                     if inds.is_empty() {
-                        return Err(format!("Prefix '{}*' selected nothing.", prefix));
+                        return Err(Error::new(ErrorKind::SelectionError(format!(
+                            "Prefix '{}*' selected nothing.",
+                            prefix
+                        ))));
                     }
 
                     Ok(inds)
@@ -561,11 +575,11 @@ impl CompositeSelector {
             CompositeSelector::GlobSuffix(ref suffix, pos_opt) => {
                 if let Some(pos) = pos_opt {
                     if !use_names {
-                        return Err(format!(
+                        return Err(Error::new(ErrorKind::SelectionError(format!(
                             "Cannot use suffix ('*{}[{}]') in selection \
                                         with --no-headers set.",
                             suffix, pos
-                        ));
+                        ))));
                     }
 
                     let mut inds = vec![];
@@ -578,17 +592,20 @@ impl CompositeSelector {
                     );
 
                     if inds.is_empty() {
-                        return Err(format!("Suffix '*{}[{}]' selected nothing.", suffix, pos));
+                        return Err(Error::new(ErrorKind::SelectionError(format!(
+                            "Suffix '*{}[{}]' selected nothing.",
+                            suffix, pos
+                        ))));
                     }
 
                     Ok(inds)
                 } else {
                     if !use_names {
-                        return Err(format!(
+                        return Err(Error::new(ErrorKind::SelectionError(format!(
                             "Cannot use suffix ('*{}') in selection \
                                         with --no-headers set.",
                             suffix
-                        ));
+                        ))));
                     }
 
                     let inds: Vec<usize> = first_record
@@ -604,7 +621,10 @@ impl CompositeSelector {
                         .collect();
 
                     if inds.is_empty() {
-                        return Err(format!("Suffix '*{}' selected nothing.", suffix));
+                        return Err(Error::new(ErrorKind::SelectionError(format!(
+                            "Suffix '*{}' selected nothing.",
+                            suffix
+                        ))));
                     }
 
                     Ok(inds)
@@ -613,11 +633,11 @@ impl CompositeSelector {
             CompositeSelector::GlobInner(ref prefix, ref suffix, pos_opt) => {
                 if let Some(pos) = pos_opt {
                     if !use_names {
-                        return Err(format!(
+                        return Err(Error::new(ErrorKind::SelectionError(format!(
                             "Cannot use inner wildcard ('{}*{}[{}]') in selection \
                                         with --no-headers set.",
                             prefix, suffix, pos
-                        ));
+                        ))));
                     }
 
                     let mut inds = vec![];
@@ -632,20 +652,20 @@ impl CompositeSelector {
                     );
 
                     if inds.is_empty() {
-                        return Err(format!(
+                        return Err(Error::new(ErrorKind::SelectionError(format!(
                             "Inner wildcard '{}*{}[{}]' selected nothing.",
                             prefix, suffix, pos
-                        ));
+                        ))));
                     }
 
                     Ok(inds)
                 } else {
                     if !use_names {
-                        return Err(format!(
+                        return Err(Error::new(ErrorKind::SelectionError(format!(
                             "Cannot use inner wildcard ('{}*{}') in selection \
                                         with --no-headers set.",
                             prefix, suffix
-                        ));
+                        ))));
                     }
 
                     let inds: Vec<usize> = first_record
@@ -661,10 +681,10 @@ impl CompositeSelector {
                         .collect();
 
                     if inds.is_empty() {
-                        return Err(format!(
+                        return Err(Error::new(ErrorKind::SelectionError(format!(
                             "Inner wildcard '{}*{}' selected nothing.",
                             prefix, suffix
-                        ));
+                        ))));
                     }
 
                     Ok(inds)
@@ -675,7 +695,7 @@ impl CompositeSelector {
 }
 
 impl OneSelector {
-    fn index(&self, first_record: &[&[u8]], use_names: bool) -> Result<usize, String> {
+    fn index(&self, first_record: &[&[u8]], use_names: bool) -> Result<usize, Error> {
         match *self {
             OneSelector::Start => Ok(0),
             OneSelector::End => Ok(if first_record.is_empty() {
@@ -686,26 +706,26 @@ impl OneSelector {
             OneSelector::Index(i) => {
                 if i < 0 {
                     if i.unsigned_abs() > first_record.len() {
-                        Err(format!(
+                        Err(Error::new(ErrorKind::SelectionError(format!(
                             "Column index {} is out of \
                                  bounds. Index must be between -1 \
                                  and -{}.",
                             i,
                             first_record.len()
-                        ))
+                        ))))
                     } else {
                         Ok(first_record.len() - i.unsigned_abs())
                     }
                 } else {
                     let i = i as usize;
                     if i >= first_record.len() {
-                        Err(format!(
+                        Err(Error::new(ErrorKind::SelectionError(format!(
                             "Column index {} is out of \
                                  bounds. Index must be between 0 \
                                  and {}.",
                             i,
                             first_record.len()
-                        ))
+                        ))))
                     } else {
                         Ok(i)
                     }
@@ -715,11 +735,11 @@ impl OneSelector {
                 let sidx = sidx.unwrap_or(0);
 
                 if !use_names {
-                    return Err(format!(
+                    return Err(Error::new(ErrorKind::SelectionError(format!(
                         "Cannot use names ('{}') in selection \
                                         with --no-headers set.",
                         s
-                    ));
+                    ))));
                 }
                 let mut num_found = 0;
 
@@ -744,26 +764,26 @@ impl OneSelector {
                 }
 
                 if num_found == 0 {
-                    Err(format!(
+                    Err(Error::new(ErrorKind::SelectionError(format!(
                         "'{}' does not exist \
                                  as a named header in the given CSV \
                                  data.",
                         s
-                    ))
+                    ))))
                 } else if sidx < 0 {
-                    Err(format!(
+                    Err(Error::new(ErrorKind::SelectionError(format!(
                         "index '{}' for '{}' is \
                                      out of bounds. Must be between -{} and -1.",
                         sidx, s, num_found
-                    ))
+                    ))))
                 } else {
-                    Err(format!(
+                    Err(Error::new(ErrorKind::SelectionError(format!(
                         "index '{}' for name '{}' is \
                                  out of bounds. Must be between 0 and {}.",
                         sidx,
                         s,
                         num_found - 1
-                    ))
+                    ))))
                 }
             }
         }
