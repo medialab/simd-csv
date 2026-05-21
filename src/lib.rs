@@ -436,7 +436,7 @@ pub use reader::{Reader, ReaderBuilder, ReverseReader};
 pub use records::{ByteRecord, ZeroCopyByteRecord};
 pub use searcher::searcher_simd_instructions;
 pub use seeker::{Seeker, SeekerBuilder};
-pub use select::{ByteHeadersIndex, ColumIndexationBy};
+pub use select::{ByteHeadersIndex, ColumIndexationBy, Selection};
 pub use splitter::{Splitter, SplitterBuilder};
 pub use total_reader::{TotalReader, TotalReaderBuilder};
 pub use utils::{unescape, AppendOnlyView};
