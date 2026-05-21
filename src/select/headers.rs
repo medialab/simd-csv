@@ -18,6 +18,8 @@ impl ColumIndexationBy<'_> {
     }
 }
 
+/// A [`ByteRecord`] wrapper for CSV headers that can be used to efficiently find
+/// columns by name, position or even both.
 pub struct ByteHeadersIndex {
     inner: ByteRecord,
     map: Option<BTreeMap<Vec<u8>, Vec<usize>>>,

@@ -17,14 +17,18 @@ use std::str::FromStr;
 
 use super::selection::Selection;
 
+/// A parsed selector that can be applied on CSV headers to create a
+/// [`crate::Selection`].
 #[derive(Clone)]
-pub struct SelectedColumns {
-    selectors: Vec<Selector>,
+pub struct Selector {
+    selectors: Vec<CompositeSelector>,
     invert: bool,
 }
 
-impl SelectedColumns {
-    pub fn parse(mut s: &str) -> Result<Self, String> {
+impl FromStr for Selector {
+    type Err = String;
+
+    fn from_str(mut s: &str) -> Result<Self, Self::Err> {
         let invert = if !s.is_empty() && s.as_bytes()[0] == b'!' {
             s = &s[1..];
             true
@@ -36,7 +40,9 @@ impl SelectedColumns {
             invert,
         })
     }
+}
 
+impl Selector {
     pub fn is_empty(&self) -> bool {
         self.selectors.is_empty()
     }
@@ -45,7 +51,7 @@ impl SelectedColumns {
         self.invert = !self.invert;
     }
 
-    pub fn selection<'a, H>(&self, first_record: H, use_names: bool) -> Result<Selection, String>
+    pub fn select<'a, H>(&self, first_record: H, use_names: bool) -> Result<Selection, String>
     where
         H: IntoIterator<Item = &'a [u8]>,
     {
@@ -80,11 +86,11 @@ impl SelectedColumns {
         Ok(Selection::new(map, first_record.len()))
     }
 
-    pub fn single_selection<'a, H>(&self, first_record: H, use_names: bool) -> Result<usize, String>
+    pub fn select_one<'a, H>(&self, first_record: H, use_names: bool) -> Result<usize, String>
     where
         H: IntoIterator<Item = &'a [u8]>,
     {
-        let selection = self.selection(first_record, use_names)?;
+        let selection = self.select(first_record, use_names)?;
 
         if selection.len() != 1 {
             return Err("target selection is not a single column".to_string());
@@ -103,10 +109,10 @@ impl SelectedColumns {
 
         for (i, selector) in self.selectors.iter().enumerate() {
             match selector {
-                Selector::One(sel) if sel.index(&headers, true).is_err() => {
+                CompositeSelector::One(sel) if sel.index(&headers, true).is_err() => {
                     dropped.push(i);
                 }
-                Selector::Range(start, end)
+                CompositeSelector::Range(start, end)
                     if start.index(&headers, true).is_err()
                         && end.index(&headers, true).is_err() =>
                 {
@@ -130,7 +136,7 @@ impl SelectedColumns {
     }
 }
 
-impl fmt::Debug for SelectedColumns {
+impl fmt::Debug for Selector {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         if self.selectors.is_empty() {
             write!(f, "<All>")
@@ -145,17 +151,17 @@ impl fmt::Debug for SelectedColumns {
     }
 }
 
-impl TryFrom<String> for SelectedColumns {
+impl TryFrom<String> for Selector {
     type Error = String;
 
     fn try_from(value: String) -> Result<Self, Self::Error> {
-        Self::parse(&value)
+        value.parse()
     }
 }
 
-impl Default for SelectedColumns {
+impl Default for Selector {
     fn default() -> Self {
-        Self::parse("").unwrap()
+        "".parse().unwrap()
     }
 }
 
@@ -172,7 +178,7 @@ impl SelectorParser {
         }
     }
 
-    fn parse(&mut self) -> Result<Vec<Selector>, String> {
+    fn parse(&mut self) -> Result<Vec<CompositeSelector>, String> {
         let mut sels = vec![];
         loop {
             if self.cur().is_none() {
@@ -207,8 +213,8 @@ impl SelectorParser {
             }
 
             sels.push(match f2 {
-                Some(end) => Selector::Range(f1, end),
-                None => Selector::One(f1),
+                Some(end) => CompositeSelector::Range(f1, end),
+                None => CompositeSelector::One(f1),
             });
 
             self.bump();
@@ -234,7 +240,7 @@ impl SelectorParser {
             let idx = self.parse_index()?;
             OneSelector::IndexedName(name, Some(idx), was_quoted)
         } else {
-            match FromStr::from_str(&name) {
+            match name.parse() {
                 Err(_) => OneSelector::IndexedName(name, None, was_quoted),
                 Ok(idx) => OneSelector::Index(idx),
             }
@@ -299,7 +305,8 @@ impl SelectorParser {
                 }
             }
         }
-        FromStr::from_str(&idx)
+
+        idx.parse()
             .map_err(|err| format!("Could not convert '{}' to an integer: {}", idx, err))
     }
 
@@ -329,7 +336,7 @@ impl SelectorParser {
 }
 
 #[derive(Clone)]
-enum Selector {
+enum CompositeSelector {
     One(OneSelector),
     Range(OneSelector, OneSelector),
     GlobPrefix(String, Option<isize>),
@@ -338,12 +345,10 @@ enum Selector {
     All(Option<isize>),
 }
 
-impl Selector {
+impl CompositeSelector {
     fn refine(&mut self) -> Result<(), String> {
         match self {
             Self::One(OneSelector::IndexedName(name, pos_opt, was_quoted)) => {
-                // TODO: deal with pos_opt
-
                 if *was_quoted {
                     return Ok(());
                 }
@@ -413,7 +418,7 @@ enum OneSelector {
     IndexedName(String, Option<isize>, bool),
 }
 
-impl Selector {
+impl CompositeSelector {
     fn indices(&self, first_record: &[&[u8]], use_names: bool) -> Result<Vec<usize>, String> {
         struct Map<'s> {
             inner: BTreeMap<&'s [u8], Vec<usize>>,
@@ -459,7 +464,7 @@ impl Selector {
         }
 
         match *self {
-            Selector::All(pos_opt) => {
+            CompositeSelector::All(pos_opt) => {
                 if let Some(pos) = pos_opt {
                     if !use_names {
                         return Err(format!(
@@ -483,8 +488,8 @@ impl Selector {
                     Ok((0..first_record.len()).collect())
                 }
             }
-            Selector::One(ref sel) => sel.index(first_record, use_names).map(|i| vec![i]),
-            Selector::Range(ref sel1, ref sel2) => {
+            CompositeSelector::One(ref sel) => sel.index(first_record, use_names).map(|i| vec![i]),
+            CompositeSelector::Range(ref sel1, ref sel2) => {
                 let i1 = sel1.index(first_record, use_names)?;
                 let i2 = sel2.index(first_record, use_names)?;
                 Ok(match i1.cmp(&i2) {
@@ -501,7 +506,7 @@ impl Selector {
                     }
                 })
             }
-            Selector::GlobPrefix(ref prefix, pos_opt) => {
+            CompositeSelector::GlobPrefix(ref prefix, pos_opt) => {
                 if let Some(pos) = pos_opt {
                     if !use_names {
                         return Err(format!(
@@ -553,7 +558,7 @@ impl Selector {
                     Ok(inds)
                 }
             }
-            Selector::GlobSuffix(ref suffix, pos_opt) => {
+            CompositeSelector::GlobSuffix(ref suffix, pos_opt) => {
                 if let Some(pos) = pos_opt {
                     if !use_names {
                         return Err(format!(
@@ -605,7 +610,7 @@ impl Selector {
                     Ok(inds)
                 }
             }
-            Selector::GlobInner(ref prefix, ref suffix, pos_opt) => {
+            CompositeSelector::GlobInner(ref prefix, ref suffix, pos_opt) => {
                 if let Some(pos) = pos_opt {
                     if !use_names {
                         return Err(format!(
@@ -765,19 +770,19 @@ impl OneSelector {
     }
 }
 
-impl fmt::Debug for Selector {
+impl fmt::Debug for CompositeSelector {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match *self {
-            Selector::All(pos_opt) => {
+            CompositeSelector::All(pos_opt) => {
                 if let Some(pos) = pos_opt {
                     write!(f, "All[{}]", pos)
                 } else {
                     write!(f, "All")
                 }
             }
-            Selector::One(ref sel) => sel.fmt(f),
-            Selector::Range(ref s, ref e) => write!(f, "Range({:?}, {:?})", s, e),
-            Selector::GlobPrefix(ref prefix, pos_opt) => write!(
+            CompositeSelector::One(ref sel) => sel.fmt(f),
+            CompositeSelector::Range(ref s, ref e) => write!(f, "Range({:?}, {:?})", s, e),
+            CompositeSelector::GlobPrefix(ref prefix, pos_opt) => write!(
                 f,
                 "Prefix({:?}){}",
                 prefix,
@@ -787,7 +792,7 @@ impl fmt::Debug for Selector {
                     "".to_string()
                 }
             ),
-            Selector::GlobSuffix(ref suffix, pos_opt) => write!(
+            CompositeSelector::GlobSuffix(ref suffix, pos_opt) => write!(
                 f,
                 "Suffix({:?}){}",
                 suffix,

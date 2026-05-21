@@ -1,5 +1,6 @@
 use std::ops::Index;
 
+/// A selection of column indices.
 pub struct Selection {
     indices: Vec<usize>,
     alignment: usize,
