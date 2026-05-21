@@ -4,6 +4,7 @@ use crate::buffer::BufReaderWithPosition;
 use crate::core::{CoreReader, ReadResult};
 use crate::error::{self, Error, ErrorKind};
 use crate::records::{ByteRecord, ByteRecordBuilder};
+use crate::select::{Selection, Selector};
 use crate::utils::{self, trim_bom};
 
 #[cfg(feature = "str")]
@@ -251,6 +252,20 @@ impl<R: Read> Reader<R> {
         self.on_first_read()?;
 
         Ok(&self.headers)
+    }
+
+    /// Attempt to select the desired columns.
+    pub fn select(&mut self, selector: &Selector) -> error::Result<Selection> {
+        let has_headers = self.has_headers;
+        let headers = self.byte_headers()?;
+        selector.select(headers, has_headers)
+    }
+
+    /// Attempt to select the desired column.
+    pub fn select_one(&mut self, selector: &Selector) -> error::Result<usize> {
+        let has_headers = self.has_headers;
+        let headers = self.byte_headers()?;
+        selector.select_one(headers, has_headers)
     }
 
     /// Attempt to read the next CSV record into a pre-allocated [`ByteRecord`].
