@@ -17,6 +17,14 @@ impl Selection {
         Self { indices, alignment }
     }
 
+    pub fn full(len: usize) -> Self {
+        Self::new((0..len).collect(), len)
+    }
+
+    pub fn without(i: usize, len: usize) -> Self {
+        Self::new((0..len).filter(|j| i != *j).collect(), len)
+    }
+
     #[inline]
     pub fn len(&self) -> usize {
         self.indices.len()
