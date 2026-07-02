@@ -69,7 +69,7 @@ impl<R: Read> LineReader<R> {
 
     /// Attempt to read the next line from underlying reader.
     ///
-    /// Will return `None` if the end of stream was reached.
+    /// Will return `Ok(None)` if end of stream was reached.
     pub fn read_line(&mut self) -> io::Result<Option<&[u8]>> {
         self.inner.reset();
 
@@ -92,6 +92,46 @@ impl<R: Read> LineReader<R> {
                 Some(pos) => {
                     let bytes = self.inner.flush(pos + 1);
                     return Ok(Some(trim_trailing_crlf(bytes)));
+                }
+            };
+        }
+    }
+
+    /// Attempt to read the next line from underlying reader but copy the line
+    /// to given buffer instead of using [`Self::read_line`] internal buffering
+    /// logic for zero-copy reading.
+    ///
+    /// Will return `Ok(false)` if end of stream was reached.
+    pub fn read_line_into(&mut self, buffer: &mut Vec<u8>) -> io::Result<bool> {
+        self.inner.reset();
+        buffer.clear();
+
+        loop {
+            let input = self.inner.fill_buf()?;
+            let len = input.len();
+
+            if len == 0 {
+                if buffer.is_empty() {
+                    return Ok(false);
+                } else {
+                    let trimmed_len = trim_trailing_crlf(buffer).len();
+
+                    buffer.truncate(trimmed_len);
+
+                    return Ok(true);
+                }
+            }
+
+            match memchr(b'\n', input) {
+                None => {
+                    buffer.extend_from_slice(input);
+                    self.inner.consume(len);
+                }
+                Some(pos) => {
+                    buffer.extend_from_slice(trim_trailing_crlf(&input[..pos + 1]));
+                    self.inner.consume(pos + 1);
+
+                    return Ok(true);
                 }
             };
         }
@@ -144,6 +184,12 @@ mod tests {
         ];
 
         for (data, expected) in tests {
+            // Count
+            let mut reader = LineReader::from_reader(Cursor::new(data));
+
+            assert_eq!(reader.count_lines()?, expected.len() as u64);
+
+            // Zero-copy
             let mut reader = LineReader::from_reader(Cursor::new(data));
 
             let mut lines = Vec::new();
@@ -154,9 +200,17 @@ mod tests {
 
             assert_eq!(lines, *expected);
 
+            // Into buffer
             let mut reader = LineReader::from_reader(Cursor::new(data));
 
-            assert_eq!(reader.count_lines()?, expected.len() as u64);
+            lines.clear();
+            let mut buffer = vec![];
+
+            while reader.read_line_into(&mut buffer)? {
+                lines.push(buffer.clone());
+            }
+
+            assert_eq!(lines, *expected);
         }
 
         Ok(())
