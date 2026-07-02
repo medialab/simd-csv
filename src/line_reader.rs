@@ -137,6 +137,15 @@ impl<R: Read> LineReader<R> {
         }
     }
 
+    /// Return an iterator over the underlying reader's lines.
+    #[inline]
+    pub fn lines(&mut self) -> Lines<'_, R> {
+        Lines {
+            reader: self,
+            buffer: Vec::new(),
+        }
+    }
+
     /// Return the current byte offset of the reader.
     #[inline(always)]
     pub fn position(&self) -> u64 {
@@ -155,6 +164,24 @@ impl<R: Read> LineReader<R> {
     #[inline(always)]
     pub fn into_inner(self) -> R {
         self.inner.into_bufreader().into_inner()
+    }
+}
+
+pub struct Lines<'r, R> {
+    reader: &'r mut LineReader<R>,
+    buffer: Vec<u8>,
+}
+
+impl<R: Read> Iterator for Lines<'_, R> {
+    type Item = io::Result<Vec<u8>>;
+
+    #[inline]
+    fn next(&mut self) -> Option<Self::Item> {
+        match self.reader.read_line_into(&mut self.buffer) {
+            Err(err) => Some(Err(err)),
+            Ok(true) => Some(Ok(self.buffer.clone())),
+            Ok(false) => None,
+        }
     }
 }
 
@@ -211,6 +238,14 @@ mod tests {
             }
 
             assert_eq!(lines, *expected);
+
+            // Iterator
+            let mut reader = LineReader::from_reader(Cursor::new(data));
+
+            assert_eq!(
+                reader.lines().collect::<Result<Vec<_>, _>>().unwrap(),
+                *expected
+            );
         }
 
         Ok(())
