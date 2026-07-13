@@ -173,6 +173,43 @@ mod x86_64 {
                 }
             }
         }
+
+        pub struct SSE2Masker {
+            delimiter_splat: __m128i,
+            newline_splat: __m128i,
+            quote_splat: __m128i,
+        }
+
+        impl SSE2Masker {
+            #[inline]
+            pub unsafe fn new(delimiter: u8, newline: u8, quote: u8) -> Self {
+                Self {
+                    delimiter_splat: _mm_set1_epi8(delimiter as i8),
+                    newline_splat: _mm_set1_epi8(newline as i8),
+                    quote_splat: _mm_set1_epi8(quote as i8),
+                }
+            }
+
+            #[inline]
+            pub unsafe fn process(&self, haystack: &[u8]) {
+                // TODO: support end of buffer
+                // TODO: test avx2 and double mask?
+                debug_assert!(haystack.len() <= SSE2_STEP);
+
+                let chunk = _mm_loadu_si128(haystack.as_ptr() as *const __m128i);
+
+                let delimiter_cmp = _mm_cmpeq_epi8(chunk, self.delimiter_splat);
+                let newline_cmp = _mm_cmpeq_epi8(chunk, self.newline_splat);
+                let quote_cmp = _mm_cmpeq_epi8(chunk, self.quote_splat);
+
+                let structural_cmp = _mm_or_si128(newline_cmp, quote_cmp);
+
+                let structural_mask = _mm_movemask_epi8(structural_cmp) as u32;
+                let mut delimiter_mask = _mm_movemask_epi8(quote_cmp) as u32;
+
+                delimiter_mask &= (1u32 << ((structural_mask | 0x1_0000).trailing_zeros())) - 1;
+            }
+        }
     }
 }
 
