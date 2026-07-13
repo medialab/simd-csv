@@ -38,24 +38,24 @@ mod x86_64 {
 
         #[derive(Debug)]
         pub struct SSE2Searcher {
-            n1: u8,
-            n2: u8,
-            n3: u8,
-            v1: __m128i,
-            v2: __m128i,
-            v3: __m128i,
+            delimiter: u8,
+            newline: u8,
+            quote: u8,
+            delimiter_splat: __m128i,
+            newline_splat: __m128i,
+            quote_splat: __m128i,
         }
 
         impl SSE2Searcher {
             #[inline]
-            pub unsafe fn new(n1: u8, n2: u8, n3: u8) -> Self {
+            pub unsafe fn new(delimiter: u8, newline: u8, quote: u8) -> Self {
                 Self {
-                    n1,
-                    n2,
-                    n3,
-                    v1: _mm_set1_epi8(n1 as i8),
-                    v2: _mm_set1_epi8(n2 as i8),
-                    v3: _mm_set1_epi8(n3 as i8),
+                    delimiter,
+                    newline,
+                    quote,
+                    delimiter_splat: _mm_set1_epi8(delimiter as i8),
+                    newline_splat: _mm_set1_epi8(newline as i8),
+                    quote_splat: _mm_set1_epi8(quote as i8),
                 }
             }
 
@@ -120,9 +120,9 @@ mod x86_64 {
                 let mut current = self.current;
                 let start = self.start;
                 let len = self.end.distance(start);
-                let v1 = self.searcher.v1;
-                let v2 = self.searcher.v2;
-                let v3 = self.searcher.v3;
+                let delimiter_splat = self.searcher.delimiter_splat;
+                let newline_splat = self.searcher.newline_splat;
+                let quote_splat = self.searcher.quote_splat;
 
                 'main: loop {
                     // Processing current move mask
@@ -140,9 +140,9 @@ mod x86_64 {
 
                         while current <= vectorized_end {
                             let chunk = _mm_loadu_si128(current as *const __m128i);
-                            let cmp1 = _mm_cmpeq_epi8(chunk, v1);
-                            let cmp2 = _mm_cmpeq_epi8(chunk, v2);
-                            let cmp3 = _mm_cmpeq_epi8(chunk, v3);
+                            let cmp1 = _mm_cmpeq_epi8(chunk, delimiter_splat);
+                            let cmp2 = _mm_cmpeq_epi8(chunk, newline_splat);
+                            let cmp3 = _mm_cmpeq_epi8(chunk, quote_splat);
                             let cmp = _mm_or_si128(cmp1, cmp2);
                             let cmp = _mm_or_si128(cmp, cmp3);
 
@@ -158,9 +158,9 @@ mod x86_64 {
 
                     // Processing remaining bytes linearly
                     while current < self.end {
-                        if *current == self.searcher.n1
-                            || *current == self.searcher.n2
-                            || *current == self.searcher.n3
+                        if *current == self.searcher.delimiter
+                            || *current == self.searcher.newline
+                            || *current == self.searcher.quote
                         {
                             let offset = current.distance(start);
                             self.current = current.add(1);
@@ -208,24 +208,24 @@ mod aarch64 {
 
     #[derive(Debug)]
     pub struct NeonSearcher {
-        n1: u8,
-        n2: u8,
-        n3: u8,
-        v1: uint8x16_t,
-        v2: uint8x16_t,
-        v3: uint8x16_t,
+        delimiter: u8,
+        newline: u8,
+        quote: u8,
+        delimiter_splat: uint8x16_t,
+        newline_splat: uint8x16_t,
+        quote_splat: uint8x16_t,
     }
 
     impl NeonSearcher {
         #[inline]
-        pub unsafe fn new(n1: u8, n2: u8, n3: u8) -> Self {
+        pub unsafe fn new(delimiter: u8, newline: u8, quote: u8) -> Self {
             Self {
-                n1,
-                n2,
-                n3,
-                v1: vdupq_n_u8(n1),
-                v2: vdupq_n_u8(n2),
-                v3: vdupq_n_u8(n3),
+                delimiter,
+                newline,
+                quote,
+                delimiter_splat: vdupq_n_u8(delimiter),
+                newline_splat: vdupq_n_u8(newline),
+                quote_splat: vdupq_n_u8(quote),
             }
         }
 
@@ -289,9 +289,9 @@ mod aarch64 {
             let mut current = self.current;
             let start = self.start;
             let len = self.end.distance(start);
-            let v1 = self.searcher.v1;
-            let v2 = self.searcher.v2;
-            let v3 = self.searcher.v3;
+            let delimiter_splat = self.searcher.delimiter_splat;
+            let newline_splat = self.searcher.newline_splat;
+            let quote_splat = self.searcher.quote_splat;
 
             'main: loop {
                 // Processing current move mask
@@ -309,9 +309,9 @@ mod aarch64 {
 
                     while current <= vectorized_end {
                         let chunk = vld1q_u8(current);
-                        let cmp1 = vceqq_u8(chunk, v1);
-                        let cmp2 = vceqq_u8(chunk, v2);
-                        let cmp3 = vceqq_u8(chunk, v3);
+                        let cmp1 = vceqq_u8(chunk, delimiter_splat);
+                        let cmp2 = vceqq_u8(chunk, newline_splat);
+                        let cmp3 = vceqq_u8(chunk, quote_splat);
                         let cmp = vorrq_u8(cmp1, cmp2);
                         let cmp = vorrq_u8(cmp, cmp3);
 
@@ -327,9 +327,9 @@ mod aarch64 {
 
                 // Processing remaining bytes linearly
                 while current < self.end {
-                    if *current == self.searcher.n1
-                        || *current == self.searcher.n2
-                        || *current == self.searcher.n3
+                    if *current == self.searcher.delimiter
+                        || *current == self.searcher.newline
+                        || *current == self.searcher.quote
                     {
                         let offset = current.distance(start);
                         self.current = current.add(1);
@@ -380,12 +380,12 @@ pub struct Searcher {
 
 impl Searcher {
     #[inline(always)]
-    pub fn new(n1: u8, n2: u8, n3: u8) -> Self {
+    pub fn new(delimiter: u8, newline: u8, quote: u8) -> Self {
         #[cfg(target_arch = "x86_64")]
         {
             unsafe {
                 Self {
-                    inner: x86_64::sse2::SSE2Searcher::new(n1, n2, n3),
+                    inner: x86_64::sse2::SSE2Searcher::new(delimiter, newline, quote),
                 }
             }
         }
@@ -394,7 +394,7 @@ impl Searcher {
         {
             unsafe {
                 Self {
-                    inner: aarch64::NeonSearcher::new(n1, n2, n3),
+                    inner: aarch64::NeonSearcher::new(delimiter, newline, quote),
                 }
             }
         }
@@ -402,7 +402,7 @@ impl Searcher {
         #[cfg(not(any(target_arch = "x86_64", target_arch = "aarch64")))]
         {
             Self {
-                inner: memchr::arch::all::memchr::Three::new(n1, n2, n3),
+                inner: memchr::arch::all::memchr::Three::new(delimiter, newline, quote),
             }
         }
     }
