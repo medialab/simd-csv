@@ -28,6 +28,42 @@ mod x86_64 {
         mask & (mask - 1)
     }
 
+    pub struct MaskIter(u32);
+
+    impl Iterator for MaskIter {
+        type Item = usize;
+
+        #[inline(always)]
+        fn next(&mut self) -> Option<Self::Item> {
+            if self.0 == 0 {
+                None
+            } else {
+                let offset = first_offset(self.0);
+                self.0 = clear_least_significant_bit(self.0);
+                Some(offset)
+            }
+        }
+    }
+
+    #[derive(Clone, Copy, Debug)]
+    pub struct Mask(u32);
+
+    impl Mask {
+        #[inline(always)]
+        pub fn into_first_offset(self) -> Option<usize> {
+            if self.0 != 0 {
+                Some(first_offset(self.0))
+            } else {
+                None
+            }
+        }
+
+        #[inline(always)]
+        pub fn into_iter(self) -> MaskIter {
+            MaskIter(self.0)
+        }
+    }
+
     pub mod sse2 {
         use super::*;
 
@@ -35,6 +71,9 @@ mod x86_64 {
             __m128i, _mm_cmpeq_epi8, _mm_loadu_si128, _mm_movemask_epi8, _mm_or_si128,
             _mm_set1_epi8,
         };
+
+        const CHUNK_SIZE: usize = 16;
+        const FULL_MASK: u32 = (1 << CHUNK_SIZE) - 1;
 
         #[derive(Debug)]
         pub struct SSE2Searcher {
@@ -62,6 +101,43 @@ mod x86_64 {
             #[inline(always)]
             pub fn iter<'s, 'h>(&'s self, haystack: &'h [u8]) -> SSE2Indices<'s, 'h> {
                 SSE2Indices::new(self, haystack)
+            }
+
+            #[inline(always)]
+            unsafe fn process_loaded_chunk(&self, chunk: __m128i, valid_mask: u32) -> (Mask, Mask) {
+                let delimiter_cmp = _mm_cmpeq_epi8(chunk, self.delimiter_splat);
+                let newline_cmp = _mm_cmpeq_epi8(chunk, self.newline_splat);
+                let quote_cmp = _mm_cmpeq_epi8(chunk, self.quote_splat);
+
+                let structural_cmp = _mm_or_si128(newline_cmp, quote_cmp);
+
+                // Ignore invalid lanes before looking for the first structural byte.
+                let structural_mask = (_mm_movemask_epi8(structural_cmp) as u32) & valid_mask;
+                let mut delimiter_mask = (_mm_movemask_epi8(delimiter_cmp) as u32) & valid_mask;
+
+                delimiter_mask &= (1u32 << ((structural_mask | 0x1_0000).trailing_zeros())) - 1;
+
+                (Mask(delimiter_mask), Mask(structural_mask))
+            }
+
+            #[inline]
+            pub unsafe fn process_chunk(&self, haystack: &[u8]) -> (Mask, Mask) {
+                if haystack.len() >= CHUNK_SIZE {
+                    let chunk = _mm_loadu_si128(haystack.as_ptr() as *const __m128i);
+                    return self.process_loaded_chunk(chunk, FULL_MASK);
+                }
+
+                let mut tail = [0u8; CHUNK_SIZE];
+                tail[..haystack.len()].copy_from_slice(haystack);
+
+                let chunk = _mm_loadu_si128(tail.as_ptr() as *const __m128i);
+
+                let valid_mask = match haystack.len() {
+                    0 => 0,
+                    n => (1u32 << n) - 1,
+                };
+
+                self.process_loaded_chunk(chunk, valid_mask)
             }
         }
 
@@ -91,8 +167,6 @@ mod x86_64 {
             }
         }
 
-        const SSE2_STEP: usize = 16;
-
         impl SSE2Indices<'_, '_> {
             #[inline]
             pub unsafe fn _next_in_current_mask(&mut self) -> Option<usize> {
@@ -100,7 +174,7 @@ mod x86_64 {
                 let current = self.current;
 
                 if mask != 0 {
-                    let offset = current.sub(SSE2_STEP).add(first_offset(mask));
+                    let offset = current.sub(CHUNK_SIZE).add(first_offset(mask));
                     self.mask = clear_least_significant_bit(mask);
                     self.current = current;
 
@@ -127,7 +201,7 @@ mod x86_64 {
                 'main: loop {
                     // Processing current move mask
                     if mask != 0 {
-                        let offset = current.sub(SSE2_STEP).add(first_offset(mask));
+                        let offset = current.sub(CHUNK_SIZE).add(first_offset(mask));
                         self.mask = clear_least_significant_bit(mask);
                         self.current = current;
 
@@ -135,8 +209,8 @@ mod x86_64 {
                     }
 
                     // Main loop of unaligned loads
-                    if len >= SSE2_STEP {
-                        let vectorized_end = self.end.sub(SSE2_STEP);
+                    if len >= CHUNK_SIZE {
+                        let vectorized_end = self.end.sub(CHUNK_SIZE);
 
                         while current <= vectorized_end {
                             let chunk = _mm_loadu_si128(current as *const __m128i);
@@ -148,7 +222,7 @@ mod x86_64 {
 
                             mask = _mm_movemask_epi8(cmp) as u32;
 
-                            current = current.add(SSE2_STEP);
+                            current = current.add(CHUNK_SIZE);
 
                             if mask != 0 {
                                 continue 'main;
@@ -173,43 +247,6 @@ mod x86_64 {
                 }
             }
         }
-
-        pub struct SSE2Masker {
-            delimiter_splat: __m128i,
-            newline_splat: __m128i,
-            quote_splat: __m128i,
-        }
-
-        impl SSE2Masker {
-            #[inline]
-            pub unsafe fn new(delimiter: u8, newline: u8, quote: u8) -> Self {
-                Self {
-                    delimiter_splat: _mm_set1_epi8(delimiter as i8),
-                    newline_splat: _mm_set1_epi8(newline as i8),
-                    quote_splat: _mm_set1_epi8(quote as i8),
-                }
-            }
-
-            #[inline]
-            pub unsafe fn process(&self, haystack: &[u8]) {
-                // TODO: support end of buffer
-                // TODO: test avx2 and double mask?
-                debug_assert!(haystack.len() <= SSE2_STEP);
-
-                let chunk = _mm_loadu_si128(haystack.as_ptr() as *const __m128i);
-
-                let delimiter_cmp = _mm_cmpeq_epi8(chunk, self.delimiter_splat);
-                let newline_cmp = _mm_cmpeq_epi8(chunk, self.newline_splat);
-                let quote_cmp = _mm_cmpeq_epi8(chunk, self.quote_splat);
-
-                let structural_cmp = _mm_or_si128(newline_cmp, quote_cmp);
-
-                let structural_mask = _mm_movemask_epi8(structural_cmp) as u32;
-                let mut delimiter_mask = _mm_movemask_epi8(quote_cmp) as u32;
-
-                delimiter_mask &= (1u32 << ((structural_mask | 0x1_0000).trailing_zeros())) - 1;
-            }
-        }
     }
 }
 
@@ -222,6 +259,8 @@ mod aarch64 {
     use std::marker::PhantomData;
 
     use crate::ext::Pointer;
+
+    const CHUNK_SIZE: usize = 16;
 
     #[inline(always)]
     unsafe fn neon_movemask(v: uint8x16_t) -> u64 {
@@ -298,8 +337,6 @@ mod aarch64 {
         }
     }
 
-    const NEON_STEP: usize = 16;
-
     impl NeonIndices<'_, '_> {
         #[inline]
         pub unsafe fn _next_in_current_mask(&mut self) -> Option<usize> {
@@ -307,7 +344,7 @@ mod aarch64 {
             let current = self.current;
 
             if mask != 0 {
-                let offset = current.sub(NEON_STEP).add(first_offset(mask));
+                let offset = current.sub(CHUNK_SIZE).add(first_offset(mask));
                 self.mask = clear_least_significant_bit(mask);
                 self.current = current;
 
@@ -333,7 +370,7 @@ mod aarch64 {
             'main: loop {
                 // Processing current move mask
                 if mask != 0 {
-                    let offset = current.sub(NEON_STEP).add(first_offset(mask));
+                    let offset = current.sub(CHUNK_SIZE).add(first_offset(mask));
                     self.mask = clear_least_significant_bit(mask);
                     self.current = current;
 
@@ -341,8 +378,8 @@ mod aarch64 {
                 }
 
                 // Main loop of unaligned loads
-                if len >= NEON_STEP {
-                    let vectorized_end = self.end.sub(NEON_STEP);
+                if len >= CHUNK_SIZE {
+                    let vectorized_end = self.end.sub(CHUNK_SIZE);
 
                     while current <= vectorized_end {
                         let chunk = vld1q_u8(current);
@@ -354,7 +391,7 @@ mod aarch64 {
 
                         mask = neon_movemask(cmp);
 
-                        current = current.add(NEON_STEP);
+                        current = current.add(CHUNK_SIZE);
 
                         if mask != 0 {
                             continue 'main;
@@ -402,6 +439,9 @@ pub fn searcher_simd_instructions() -> &'static str {
         "none"
     }
 }
+
+#[cfg(target_arch = "x86_64")]
+pub use x86_64::Mask;
 
 #[derive(Debug)]
 pub struct Searcher {
@@ -465,6 +505,24 @@ impl Searcher {
             Indices {
                 inner: self.inner.iter(haystack),
             }
+        }
+    }
+
+    #[inline(always)]
+    pub fn process_chunk(&self, haystack: &[u8]) -> (Mask, Mask) {
+        #[cfg(target_arch = "x86_64")]
+        unsafe {
+            self.inner.process_chunk(haystack)
+        }
+
+        #[cfg(target_arch = "aarch64")]
+        {
+            unimplemented!()
+        }
+
+        #[cfg(not(any(target_arch = "x86_64", target_arch = "aarch64")))]
+        {
+            unimplemented!()
         }
     }
 }
@@ -602,5 +660,81 @@ mod tests {
                 .iter(complex)
                 .collect::<Vec<_>>()
         );
+    }
+
+    #[test]
+    #[cfg(target_arch = "x86_64")]
+    fn test_process_chunk() {
+        let searcher = Searcher::new(b',', b'\n', b'"');
+
+        // Only delimiters
+        let buffer: &[u8; 16] = b"name,surname,las";
+
+        let (delimiter_mask, structural_mask) = searcher.process_chunk(buffer);
+
+        assert_eq!(structural_mask.into_first_offset(), None);
+        assert_eq!(delimiter_mask.into_iter().collect::<Vec<_>>(), vec![4, 12]);
+
+        // Newline
+        let buffer: &[u8; 16] = b"name,sur\nname,la";
+
+        let (delimiter_mask, structural_mask) = searcher.process_chunk(buffer);
+
+        assert_eq!(structural_mask.into_first_offset(), Some(8));
+        assert_eq!(delimiter_mask.into_iter().collect::<Vec<_>>(), vec![4]);
+
+        // Quote
+        let buffer: &[u8; 16] = b"name,sur\"name,la";
+
+        let (delimiter_mask, structural_mask) = searcher.process_chunk(buffer);
+
+        assert_eq!(structural_mask.into_first_offset(), Some(8));
+        assert_eq!(delimiter_mask.into_iter().collect::<Vec<_>>(), vec![4]);
+
+        // Comma in first position
+        let buffer: &[u8; 16] = b",name,sur\"name,l";
+
+        let (delimiter_mask, structural_mask) = searcher.process_chunk(buffer);
+
+        assert_eq!(structural_mask.into_first_offset(), Some(9));
+        assert_eq!(delimiter_mask.into_iter().collect::<Vec<_>>(), vec![0, 5]);
+
+        // All commas neutralized
+        let buffer: &[u8; 16] = b"\",ame,sur\"name,l";
+
+        let (delimiter_mask, structural_mask) = searcher.process_chunk(buffer);
+
+        assert_eq!(structural_mask.into_first_offset(), Some(0));
+        assert_eq!(
+            delimiter_mask.into_iter().collect::<Vec<usize>>(),
+            Vec::<usize>::new()
+        );
+
+        // Longer buffers
+        let buffer = b"name,surname,lasbuthasotherstuffi,nthetailofthebuffer,";
+
+        let (delimiter_mask, structural_mask) = searcher.process_chunk(buffer);
+
+        assert_eq!(structural_mask.into_first_offset(), None);
+        assert_eq!(delimiter_mask.into_iter().collect::<Vec<_>>(), vec![4, 12]);
+
+        // Empty buffer
+        let buffer = b"";
+
+        let (delimiter_mask, structural_mask) = searcher.process_chunk(buffer);
+
+        assert_eq!(structural_mask.into_first_offset(), None);
+        assert_eq!(
+            delimiter_mask.into_iter().collect::<Vec<_>>(),
+            Vec::<usize>::new()
+        );
+
+        // Tail buffer
+        let buffer = b"a,b,\nc,";
+
+        let (delimiter_mask, structural_mask) = searcher.process_chunk(buffer);
+
+        assert_eq!(structural_mask.into_first_offset(), Some(4));
+        assert_eq!(delimiter_mask.into_iter().collect::<Vec<_>>(), vec![1, 3]);
     }
 }
