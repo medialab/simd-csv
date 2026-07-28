@@ -121,10 +121,10 @@ mod x86_64 {
             }
 
             #[inline]
-            pub unsafe fn process_chunk(&self, haystack: &[u8]) -> (Mask, Mask) {
+            pub unsafe fn process_chunk(&self, haystack: &[u8]) -> (usize, (Mask, Mask)) {
                 if haystack.len() >= CHUNK_SIZE {
                     let chunk = _mm_loadu_si128(haystack.as_ptr() as *const __m128i);
-                    return self.process_loaded_chunk(chunk, FULL_MASK);
+                    return (CHUNK_SIZE, self.process_loaded_chunk(chunk, FULL_MASK));
                 }
 
                 let mut tail = [0u8; CHUNK_SIZE];
@@ -137,7 +137,7 @@ mod x86_64 {
                     n => (1u32 << n) - 1,
                 };
 
-                self.process_loaded_chunk(chunk, valid_mask)
+                (haystack.len(), self.process_loaded_chunk(chunk, valid_mask))
             }
         }
 
@@ -509,7 +509,7 @@ impl Searcher {
     }
 
     #[inline(always)]
-    pub fn process_chunk(&self, haystack: &[u8]) -> (Mask, Mask) {
+    pub fn process_chunk(&self, haystack: &[u8]) -> (usize, (Mask, Mask)) {
         #[cfg(target_arch = "x86_64")]
         unsafe {
             self.inner.process_chunk(haystack)
@@ -670,40 +670,45 @@ mod tests {
         // Only delimiters
         let buffer: &[u8; 16] = b"name,surname,las";
 
-        let (delimiter_mask, structural_mask) = searcher.process_chunk(buffer);
+        let (read, (delimiter_mask, structural_mask)) = searcher.process_chunk(buffer);
 
+        assert_eq!(read, 16);
         assert_eq!(structural_mask.into_first_offset(), None);
         assert_eq!(delimiter_mask.into_iter().collect::<Vec<_>>(), vec![4, 12]);
 
         // Newline
         let buffer: &[u8; 16] = b"name,sur\nname,la";
 
-        let (delimiter_mask, structural_mask) = searcher.process_chunk(buffer);
+        let (read, (delimiter_mask, structural_mask)) = searcher.process_chunk(buffer);
 
+        assert_eq!(read, 16);
         assert_eq!(structural_mask.into_first_offset(), Some(8));
         assert_eq!(delimiter_mask.into_iter().collect::<Vec<_>>(), vec![4]);
 
         // Quote
         let buffer: &[u8; 16] = b"name,sur\"name,la";
 
-        let (delimiter_mask, structural_mask) = searcher.process_chunk(buffer);
+        let (read, (delimiter_mask, structural_mask)) = searcher.process_chunk(buffer);
 
+        assert_eq!(read, 16);
         assert_eq!(structural_mask.into_first_offset(), Some(8));
         assert_eq!(delimiter_mask.into_iter().collect::<Vec<_>>(), vec![4]);
 
         // Comma in first position
         let buffer: &[u8; 16] = b",name,sur\"name,l";
 
-        let (delimiter_mask, structural_mask) = searcher.process_chunk(buffer);
+        let (read, (delimiter_mask, structural_mask)) = searcher.process_chunk(buffer);
 
+        assert_eq!(read, 16);
         assert_eq!(structural_mask.into_first_offset(), Some(9));
         assert_eq!(delimiter_mask.into_iter().collect::<Vec<_>>(), vec![0, 5]);
 
         // All commas neutralized
         let buffer: &[u8; 16] = b"\",ame,sur\"name,l";
 
-        let (delimiter_mask, structural_mask) = searcher.process_chunk(buffer);
+        let (read, (delimiter_mask, structural_mask)) = searcher.process_chunk(buffer);
 
+        assert_eq!(read, 16);
         assert_eq!(structural_mask.into_first_offset(), Some(0));
         assert_eq!(
             delimiter_mask.into_iter().collect::<Vec<usize>>(),
@@ -713,16 +718,18 @@ mod tests {
         // Longer buffers
         let buffer = b"name,surname,lasbuthasotherstuffi,nthetailofthebuffer,";
 
-        let (delimiter_mask, structural_mask) = searcher.process_chunk(buffer);
+        let (read, (delimiter_mask, structural_mask)) = searcher.process_chunk(buffer);
 
+        assert_eq!(read, 16);
         assert_eq!(structural_mask.into_first_offset(), None);
         assert_eq!(delimiter_mask.into_iter().collect::<Vec<_>>(), vec![4, 12]);
 
         // Empty buffer
         let buffer = b"";
 
-        let (delimiter_mask, structural_mask) = searcher.process_chunk(buffer);
+        let (read, (delimiter_mask, structural_mask)) = searcher.process_chunk(buffer);
 
+        assert_eq!(read, 0);
         assert_eq!(structural_mask.into_first_offset(), None);
         assert_eq!(
             delimiter_mask.into_iter().collect::<Vec<_>>(),
@@ -732,8 +739,9 @@ mod tests {
         // Tail buffer
         let buffer = b"a,b,\nc,";
 
-        let (delimiter_mask, structural_mask) = searcher.process_chunk(buffer);
+        let (read, (delimiter_mask, structural_mask)) = searcher.process_chunk(buffer);
 
+        assert_eq!(read, 7);
         assert_eq!(structural_mask.into_first_offset(), Some(4));
         assert_eq!(delimiter_mask.into_iter().collect::<Vec<_>>(), vec![1, 3]);
     }

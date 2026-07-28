@@ -238,6 +238,110 @@ impl CoreReader {
         (ReadResult::InputEmpty, input_len)
     }
 
+    pub(crate) fn split_record_and_find_separators_fast(
+        &mut self,
+        input: &[u8],
+        seps_offset: usize,
+        seps: &mut Vec<usize>,
+    ) -> (ReadResult, usize) {
+        use ReadState::*;
+
+        let input_len = input.len();
+
+        if input_len == 0 {
+            if !self.record_was_read {
+                self.record_was_read = true;
+                return (ReadResult::Record, 0);
+            }
+
+            return (ReadResult::End, 0);
+        }
+
+        if self.record_was_read {
+            if input[0] == b'\n' {
+                return (ReadResult::Lf, 1);
+            } else if input[0] == b'\r' {
+                return (ReadResult::Cr, 1);
+            }
+        }
+
+        self.record_was_read = false;
+
+        let mut pos: usize = 0;
+
+        while pos < input_len {
+            match self.state {
+                Unquoted => {
+                    // Fast path for quoted field start
+                    if input[pos] == self.quote {
+                        self.state = Quoted;
+                        pos += 1;
+                        continue;
+                    }
+
+                    // Here we are moving to next quote or end of line
+                    while pos < input_len {
+                        let (read, (delimiter_mask, structural_mask)) =
+                            self.searcher.process_chunk(&input[pos..]);
+
+                        for offset in delimiter_mask.into_iter() {
+                            seps.push(seps_offset + pos + offset);
+                        }
+
+                        if let Some(offset) = structural_mask.into_first_offset() {
+                            let byte = input[pos + offset];
+
+                            if byte == b'\n' {
+                                self.record_was_read = true;
+                                return (ReadResult::Record, pos + offset + 1);
+                            }
+
+                            // Here, `byte` is guaranteed to be a quote
+                            self.state = Quoted;
+                            pos += offset + 1;
+                            break;
+                        } else {
+                            pos += read;
+                        }
+                    }
+                }
+                Quoted => {
+                    // Here we moving to next quote
+                    if let Some(offset) = memchr(self.quote, &input[pos..]) {
+                        pos += offset + 1;
+                        self.state = Quote;
+                    } else {
+                        break;
+                    }
+                }
+                Quote => {
+                    let byte = input[pos];
+
+                    pos += 1;
+
+                    if byte == self.quote {
+                        self.state = Quoted;
+                    } else if byte == self.delimiter {
+                        seps.push(seps_offset + pos - 1);
+                        self.state = Unquoted;
+                    } else if byte == b'\n' {
+                        self.record_was_read = true;
+                        self.state = Unquoted;
+                        return (ReadResult::Record, pos);
+                    } else if byte == b'\r' && pos + 1 < input_len && input[pos + 1] == b'\n' {
+                        self.record_was_read = true;
+                        self.state = Unquoted;
+                        return (ReadResult::Record, pos + 1);
+                    } else {
+                        self.state = Unquoted;
+                    }
+                }
+            }
+        }
+
+        (ReadResult::InputEmpty, input_len)
+    }
+
     // pub(crate) fn split_record_and_find_separators_alt(
     //     &mut self,
     //     input: &[u8],
