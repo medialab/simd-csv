@@ -233,9 +233,11 @@ impl<R: Read> ZeroCopyReader<R> {
             let seps_offset = self.buffer.saved().len();
             let input = self.buffer.fill_buf()?;
 
-            let (result, pos) =
-                self.inner
-                    .split_record_and_find_separators(input, seps_offset, &mut self.seps);
+            let (result, pos) = self.inner.split_record_and_find_separators_fast(
+                input,
+                seps_offset,
+                &mut self.seps,
+            );
 
             match result {
                 End => {

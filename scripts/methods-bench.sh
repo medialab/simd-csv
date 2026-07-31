@@ -2,7 +2,7 @@
 set -uoe pipefail
 
 # Building
-cargo build --all-features --release --example count
+CARGO_BUILD_RUSTFLAGS='-C target-cpu=native' cargo build --all-features --release --example count
 PROG=target/release/examples/count
 
 TIMEFORMAT=%3lR
