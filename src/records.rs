@@ -300,6 +300,14 @@ impl ByteRecord {
         Self::default()
     }
 
+    /// Create a new record with given capacity.
+    pub fn with_capacity(buffer: usize, fields: usize) -> Self {
+        Self {
+            data: Vec::with_capacity(buffer),
+            bounds: Vec::with_capacity(fields),
+        }
+    }
+
     /// Return the number of fields of the record.
     #[inline]
     pub fn len(&self) -> usize {
