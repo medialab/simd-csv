@@ -174,14 +174,11 @@ impl<W: Write> Writer<W> {
         I: IntoIterator<Item = T>,
         T: AsRef<[u8]>,
     {
-        let mut first = true;
         let mut written: usize = 0;
         let mut empty = false;
 
         for cell in record.into_iter() {
-            if first {
-                first = false;
-            } else {
+            if written > 0 {
                 self.buf_writer.write_all(&[self.delimiter])?;
             }
 
@@ -286,14 +283,11 @@ impl<W: Write> Writer<W> {
         I: IntoIterator<Item = T>,
         T: AsRef<[u8]>,
     {
-        let mut first = true;
         let mut written: usize = 0;
         let mut empty = false;
 
         for cell in record.into_iter() {
-            if first {
-                first = false;
-            } else {
+            if written > 0 {
                 self.buf_writer.write_all(&[self.delimiter])?;
             }
 
