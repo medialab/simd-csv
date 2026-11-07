@@ -34,7 +34,7 @@ str = ["dep:simdutf8"]
 binary = []
 
 [dependencies]
-memchr = "2.7.6"
+memchr = "2.8.3"
 simdutf8 = { version = "0.1.5", optional = true }
 
 [dev-dependencies]
