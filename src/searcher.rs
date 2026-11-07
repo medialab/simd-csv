@@ -168,22 +168,6 @@ mod x86_64 {
         }
 
         impl SSE2Indices<'_, '_> {
-            #[inline]
-            pub unsafe fn _next_in_current_mask(&mut self) -> Option<usize> {
-                let mask = self.mask;
-                let current = self.current;
-
-                if mask != 0 {
-                    let offset = current.sub(CHUNK_SIZE).add(first_offset(mask));
-                    self.mask = clear_least_significant_bit(mask);
-                    self.current = current;
-
-                    Some(offset.distance(self.start))
-                } else {
-                    None
-                }
-            }
-
             pub unsafe fn next(&mut self) -> Option<usize> {
                 if self.start >= self.end {
                     return None;
@@ -486,25 +470,8 @@ impl Searcher {
 
     #[inline(always)]
     pub fn search<'s, 'h>(&'s self, haystack: &'h [u8]) -> Indices<'s, 'h> {
-        #[cfg(target_arch = "x86_64")]
-        {
-            Indices {
-                inner: self.inner.iter(haystack),
-            }
-        }
-
-        #[cfg(target_arch = "aarch64")]
-        {
-            Indices {
-                inner: self.inner.iter(haystack),
-            }
-        }
-
-        #[cfg(not(any(target_arch = "x86_64", target_arch = "aarch64")))]
-        {
-            Indices {
-                inner: self.inner.iter(haystack),
-            }
+        Indices {
+            inner: self.inner.iter(haystack),
         }
     }
 
@@ -559,26 +526,6 @@ impl Iterator for Indices<'_, '_> {
         #[cfg(not(any(target_arch = "x86_64", target_arch = "aarch64")))]
         {
             self.inner.next()
-        }
-    }
-}
-
-impl Indices<'_, '_> {
-    #[inline(always)]
-    pub fn _next_in_current_mask(&mut self) -> Option<usize> {
-        #[cfg(target_arch = "x86_64")]
-        {
-            unsafe { self.inner._next_in_current_mask() }
-        }
-
-        #[cfg(target_arch = "aarch64")]
-        {
-            unsafe { self.inner._next_in_current_mask() }
-        }
-
-        #[cfg(not(any(target_arch = "x86_64", target_arch = "aarch64")))]
-        {
-            None
         }
     }
 }
