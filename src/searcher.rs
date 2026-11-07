@@ -28,41 +28,41 @@ mod x86_64 {
         mask & (mask - 1)
     }
 
-    pub struct MaskIter(u32);
+    // pub struct MaskIter(u32);
 
-    impl Iterator for MaskIter {
-        type Item = usize;
+    // impl Iterator for MaskIter {
+    //     type Item = usize;
 
-        #[inline(always)]
-        fn next(&mut self) -> Option<Self::Item> {
-            if self.0 == 0 {
-                None
-            } else {
-                let offset = first_offset(self.0);
-                self.0 = clear_least_significant_bit(self.0);
-                Some(offset)
-            }
-        }
-    }
+    //     #[inline(always)]
+    //     fn next(&mut self) -> Option<Self::Item> {
+    //         if self.0 == 0 {
+    //             None
+    //         } else {
+    //             let offset = first_offset(self.0);
+    //             self.0 = clear_least_significant_bit(self.0);
+    //             Some(offset)
+    //         }
+    //     }
+    // }
 
-    #[derive(Clone, Copy, Debug)]
-    pub struct Mask(u32);
+    // #[derive(Clone, Copy, Debug)]
+    // pub struct Mask(u32);
 
-    impl Mask {
-        #[inline(always)]
-        pub fn into_first_offset(self) -> Option<usize> {
-            if self.0 != 0 {
-                Some(first_offset(self.0))
-            } else {
-                None
-            }
-        }
+    // impl Mask {
+    //     #[inline(always)]
+    //     pub fn into_first_offset(self) -> Option<usize> {
+    //         if self.0 != 0 {
+    //             Some(first_offset(self.0))
+    //         } else {
+    //             None
+    //         }
+    //     }
 
-        #[inline(always)]
-        pub fn into_iter(self) -> MaskIter {
-            MaskIter(self.0)
-        }
-    }
+    //     #[inline(always)]
+    //     pub fn into_iter(self) -> MaskIter {
+    //         MaskIter(self.0)
+    //     }
+    // }
 
     pub mod sse2 {
         use super::*;
@@ -73,7 +73,7 @@ mod x86_64 {
         };
 
         const CHUNK_SIZE: usize = 16;
-        const FULL_MASK: u32 = (1 << CHUNK_SIZE) - 1;
+        // const FULL_MASK: u32 = (1 << CHUNK_SIZE) - 1;
 
         #[derive(Debug)]
         pub struct SSE2Searcher {
@@ -103,42 +103,42 @@ mod x86_64 {
                 SSE2Indices::new(self, haystack)
             }
 
-            #[inline(always)]
-            unsafe fn process_loaded_chunk(&self, chunk: __m128i, valid_mask: u32) -> (Mask, Mask) {
-                let delimiter_cmp = _mm_cmpeq_epi8(chunk, self.delimiter_splat);
-                let newline_cmp = _mm_cmpeq_epi8(chunk, self.newline_splat);
-                let quote_cmp = _mm_cmpeq_epi8(chunk, self.quote_splat);
+            // #[inline(always)]
+            // unsafe fn process_loaded_chunk(&self, chunk: __m128i, valid_mask: u32) -> (Mask, Mask) {
+            //     let delimiter_cmp = _mm_cmpeq_epi8(chunk, self.delimiter_splat);
+            //     let newline_cmp = _mm_cmpeq_epi8(chunk, self.newline_splat);
+            //     let quote_cmp = _mm_cmpeq_epi8(chunk, self.quote_splat);
 
-                let structural_cmp = _mm_or_si128(newline_cmp, quote_cmp);
+            //     let structural_cmp = _mm_or_si128(newline_cmp, quote_cmp);
 
-                // Ignore invalid lanes before looking for the first structural byte.
-                let structural_mask = (_mm_movemask_epi8(structural_cmp) as u32) & valid_mask;
-                let mut delimiter_mask = (_mm_movemask_epi8(delimiter_cmp) as u32) & valid_mask;
+            //     // Ignore invalid lanes before looking for the first structural byte.
+            //     let structural_mask = (_mm_movemask_epi8(structural_cmp) as u32) & valid_mask;
+            //     let mut delimiter_mask = (_mm_movemask_epi8(delimiter_cmp) as u32) & valid_mask;
 
-                delimiter_mask &= (1u32 << ((structural_mask | 0x1_0000).trailing_zeros())) - 1;
+            //     delimiter_mask &= (1u32 << ((structural_mask | 0x1_0000).trailing_zeros())) - 1;
 
-                (Mask(delimiter_mask), Mask(structural_mask))
-            }
+            //     (Mask(delimiter_mask), Mask(structural_mask))
+            // }
 
-            #[inline]
-            pub unsafe fn process_chunk(&self, haystack: &[u8]) -> (usize, (Mask, Mask)) {
-                if haystack.len() >= CHUNK_SIZE {
-                    let chunk = _mm_loadu_si128(haystack.as_ptr() as *const __m128i);
-                    return (CHUNK_SIZE, self.process_loaded_chunk(chunk, FULL_MASK));
-                }
+            // #[inline]
+            // pub unsafe fn process_chunk(&self, haystack: &[u8]) -> (usize, (Mask, Mask)) {
+            //     if haystack.len() >= CHUNK_SIZE {
+            //         let chunk = _mm_loadu_si128(haystack.as_ptr() as *const __m128i);
+            //         return (CHUNK_SIZE, self.process_loaded_chunk(chunk, FULL_MASK));
+            //     }
 
-                let mut tail = [0u8; CHUNK_SIZE];
-                tail[..haystack.len()].copy_from_slice(haystack);
+            //     let mut tail = [0u8; CHUNK_SIZE];
+            //     tail[..haystack.len()].copy_from_slice(haystack);
 
-                let chunk = _mm_loadu_si128(tail.as_ptr() as *const __m128i);
+            //     let chunk = _mm_loadu_si128(tail.as_ptr() as *const __m128i);
 
-                let valid_mask = match haystack.len() {
-                    0 => 0,
-                    n => (1u32 << n) - 1,
-                };
+            //     let valid_mask = match haystack.len() {
+            //         0 => 0,
+            //         n => (1u32 << n) - 1,
+            //     };
 
-                (haystack.len(), self.process_loaded_chunk(chunk, valid_mask))
-            }
+            //     (haystack.len(), self.process_loaded_chunk(chunk, valid_mask))
+            // }
         }
 
         #[derive(Debug)]
@@ -440,8 +440,8 @@ pub fn searcher_simd_instructions() -> &'static str {
     }
 }
 
-#[cfg(target_arch = "x86_64")]
-pub use x86_64::Mask;
+// #[cfg(target_arch = "x86_64")]
+// pub use x86_64::Mask;
 
 #[derive(Debug)]
 pub struct Searcher {
@@ -508,23 +508,23 @@ impl Searcher {
         }
     }
 
-    #[inline(always)]
-    pub fn process_chunk(&self, haystack: &[u8]) -> (usize, (Mask, Mask)) {
-        #[cfg(target_arch = "x86_64")]
-        unsafe {
-            self.inner.process_chunk(haystack)
-        }
+    // #[inline(always)]
+    // pub fn process_chunk(&self, haystack: &[u8]) -> (usize, (Mask, Mask)) {
+    //     #[cfg(target_arch = "x86_64")]
+    //     unsafe {
+    //         self.inner.process_chunk(haystack)
+    //     }
 
-        #[cfg(target_arch = "aarch64")]
-        {
-            unimplemented!()
-        }
+    //     #[cfg(target_arch = "aarch64")]
+    //     {
+    //         unimplemented!()
+    //     }
 
-        #[cfg(not(any(target_arch = "x86_64", target_arch = "aarch64")))]
-        {
-            unimplemented!()
-        }
-    }
+    //     #[cfg(not(any(target_arch = "x86_64", target_arch = "aarch64")))]
+    //     {
+    //         unimplemented!()
+    //     }
+    // }
 }
 
 #[derive(Debug)]
@@ -662,87 +662,87 @@ mod tests {
         );
     }
 
-    #[test]
-    #[cfg(target_arch = "x86_64")]
-    fn test_process_chunk() {
-        let searcher = Searcher::new(b',', b'\n', b'"');
+    // #[test]
+    // #[cfg(target_arch = "x86_64")]
+    // fn test_process_chunk() {
+    //     let searcher = Searcher::new(b',', b'\n', b'"');
 
-        // Only delimiters
-        let buffer: &[u8; 16] = b"name,surname,las";
+    //     // Only delimiters
+    //     let buffer: &[u8; 16] = b"name,surname,las";
 
-        let (read, (delimiter_mask, structural_mask)) = searcher.process_chunk(buffer);
+    //     let (read, (delimiter_mask, structural_mask)) = searcher.process_chunk(buffer);
 
-        assert_eq!(read, 16);
-        assert_eq!(structural_mask.into_first_offset(), None);
-        assert_eq!(delimiter_mask.into_iter().collect::<Vec<_>>(), vec![4, 12]);
+    //     assert_eq!(read, 16);
+    //     assert_eq!(structural_mask.into_first_offset(), None);
+    //     assert_eq!(delimiter_mask.into_iter().collect::<Vec<_>>(), vec![4, 12]);
 
-        // Newline
-        let buffer: &[u8; 16] = b"name,sur\nname,la";
+    //     // Newline
+    //     let buffer: &[u8; 16] = b"name,sur\nname,la";
 
-        let (read, (delimiter_mask, structural_mask)) = searcher.process_chunk(buffer);
+    //     let (read, (delimiter_mask, structural_mask)) = searcher.process_chunk(buffer);
 
-        assert_eq!(read, 16);
-        assert_eq!(structural_mask.into_first_offset(), Some(8));
-        assert_eq!(delimiter_mask.into_iter().collect::<Vec<_>>(), vec![4]);
+    //     assert_eq!(read, 16);
+    //     assert_eq!(structural_mask.into_first_offset(), Some(8));
+    //     assert_eq!(delimiter_mask.into_iter().collect::<Vec<_>>(), vec![4]);
 
-        // Quote
-        let buffer: &[u8; 16] = b"name,sur\"name,la";
+    //     // Quote
+    //     let buffer: &[u8; 16] = b"name,sur\"name,la";
 
-        let (read, (delimiter_mask, structural_mask)) = searcher.process_chunk(buffer);
+    //     let (read, (delimiter_mask, structural_mask)) = searcher.process_chunk(buffer);
 
-        assert_eq!(read, 16);
-        assert_eq!(structural_mask.into_first_offset(), Some(8));
-        assert_eq!(delimiter_mask.into_iter().collect::<Vec<_>>(), vec![4]);
+    //     assert_eq!(read, 16);
+    //     assert_eq!(structural_mask.into_first_offset(), Some(8));
+    //     assert_eq!(delimiter_mask.into_iter().collect::<Vec<_>>(), vec![4]);
 
-        // Comma in first position
-        let buffer: &[u8; 16] = b",name,sur\"name,l";
+    //     // Comma in first position
+    //     let buffer: &[u8; 16] = b",name,sur\"name,l";
 
-        let (read, (delimiter_mask, structural_mask)) = searcher.process_chunk(buffer);
+    //     let (read, (delimiter_mask, structural_mask)) = searcher.process_chunk(buffer);
 
-        assert_eq!(read, 16);
-        assert_eq!(structural_mask.into_first_offset(), Some(9));
-        assert_eq!(delimiter_mask.into_iter().collect::<Vec<_>>(), vec![0, 5]);
+    //     assert_eq!(read, 16);
+    //     assert_eq!(structural_mask.into_first_offset(), Some(9));
+    //     assert_eq!(delimiter_mask.into_iter().collect::<Vec<_>>(), vec![0, 5]);
 
-        // All commas neutralized
-        let buffer: &[u8; 16] = b"\",ame,sur\"name,l";
+    //     // All commas neutralized
+    //     let buffer: &[u8; 16] = b"\",ame,sur\"name,l";
 
-        let (read, (delimiter_mask, structural_mask)) = searcher.process_chunk(buffer);
+    //     let (read, (delimiter_mask, structural_mask)) = searcher.process_chunk(buffer);
 
-        assert_eq!(read, 16);
-        assert_eq!(structural_mask.into_first_offset(), Some(0));
-        assert_eq!(
-            delimiter_mask.into_iter().collect::<Vec<usize>>(),
-            Vec::<usize>::new()
-        );
+    //     assert_eq!(read, 16);
+    //     assert_eq!(structural_mask.into_first_offset(), Some(0));
+    //     assert_eq!(
+    //         delimiter_mask.into_iter().collect::<Vec<usize>>(),
+    //         Vec::<usize>::new()
+    //     );
 
-        // Longer buffers
-        let buffer = b"name,surname,lasbuthasotherstuffi,nthetailofthebuffer,";
+    //     // Longer buffers
+    //     let buffer = b"name,surname,lasbuthasotherstuffi,nthetailofthebuffer,";
 
-        let (read, (delimiter_mask, structural_mask)) = searcher.process_chunk(buffer);
+    //     let (read, (delimiter_mask, structural_mask)) = searcher.process_chunk(buffer);
 
-        assert_eq!(read, 16);
-        assert_eq!(structural_mask.into_first_offset(), None);
-        assert_eq!(delimiter_mask.into_iter().collect::<Vec<_>>(), vec![4, 12]);
+    //     assert_eq!(read, 16);
+    //     assert_eq!(structural_mask.into_first_offset(), None);
+    //     assert_eq!(delimiter_mask.into_iter().collect::<Vec<_>>(), vec![4, 12]);
 
-        // Empty buffer
-        let buffer = b"";
+    //     // Empty buffer
+    //     let buffer = b"";
 
-        let (read, (delimiter_mask, structural_mask)) = searcher.process_chunk(buffer);
+    //     let (read, (delimiter_mask, structural_mask)) = searcher.process_chunk(buffer);
 
-        assert_eq!(read, 0);
-        assert_eq!(structural_mask.into_first_offset(), None);
-        assert_eq!(
-            delimiter_mask.into_iter().collect::<Vec<_>>(),
-            Vec::<usize>::new()
-        );
+    //     assert_eq!(read, 0);
+    //     assert_eq!(structural_mask.into_first_offset(), None);
+    //     assert_eq!(
+    //         delimiter_mask.into_iter().collect::<Vec<_>>(),
+    //         Vec::<usize>::new()
+    //     );
 
-        // Tail buffer
-        let buffer = b"a,b,\nc,";
+    //     // Tail buffer
+    //     let buffer = b"a,b,\nc,";
 
-        let (read, (delimiter_mask, structural_mask)) = searcher.process_chunk(buffer);
+    //     let (read, (delimiter_mask, structural_mask)) = searcher.process_chunk(buffer);
 
-        assert_eq!(read, 7);
-        assert_eq!(structural_mask.into_first_offset(), Some(4));
-        assert_eq!(delimiter_mask.into_iter().collect::<Vec<_>>(), vec![1, 3]);
-    }
+    //     assert_eq!(read, 7);
+    //     assert_eq!(structural_mask.into_first_offset(), Some(4));
+    //     assert_eq!(delimiter_mask.into_iter().collect::<Vec<_>>(), vec![1, 3]);
+    // }
 }
