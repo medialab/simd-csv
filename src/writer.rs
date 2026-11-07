@@ -135,6 +135,12 @@ impl<W: Write> Writer<W> {
         self.buf_writer.flush()
     }
 
+    /// Return a reference to the underlying writer.
+    #[inline(always)]
+    pub fn get_ref(&self) -> &W {
+        self.buf_writer.get_ref()
+    }
+
     #[inline]
     fn check_field_count(&mut self, written: usize) -> error::Result<()> {
         if self.flexible {
@@ -378,11 +384,95 @@ impl<W: Write> Writer<W> {
         Ok(())
     }
 
+    #[inline(always)]
+    pub fn fields_writer(&mut self) -> FieldsWriter<W> {
+        FieldsWriter::new(self)
+    }
+
     /// Attempt to unwrap the underlying [`BufWriter`] by flusing it and
     /// returning the original writer.
     #[inline]
     pub fn into_inner(self) -> Result<W, IntoInnerError<BufWriter<W>>> {
         self.buf_writer.into_inner()
+    }
+}
+
+pub struct FieldsWriter<'a, W: Write> {
+    inner: &'a mut Writer<W>,
+    written: usize,
+    empty: bool,
+}
+
+impl<'a, W: Write> FieldsWriter<'a, W> {
+    fn new(inner: &'a mut Writer<W>) -> Self {
+        Self {
+            inner,
+            written: 0,
+            empty: false,
+        }
+    }
+
+    #[inline]
+    pub fn reset(&mut self) {
+        self.written = 0;
+        self.empty = false;
+    }
+
+    pub fn write_field_no_quoting<F: AsRef<[u8]>>(&mut self, field: F) -> error::Result<()> {
+        if self.written > 0 {
+            self.inner.buf_writer.write_all(&[self.inner.delimiter])?;
+        }
+
+        let cell = field.as_ref();
+
+        if cell.is_empty() {
+            self.empty = true;
+        }
+
+        self.inner.buf_writer.write_all(cell)?;
+
+        self.written += 1;
+
+        Ok(())
+    }
+
+    pub fn write_field<F: AsRef<[u8]>>(&mut self, field: F) -> error::Result<()> {
+        if self.written > 0 {
+            self.inner.buf_writer.write_all(&[self.inner.delimiter])?;
+        }
+
+        let cell = field.as_ref();
+
+        if cell.is_empty() {
+            self.empty = true;
+        }
+
+        if self.inner.should_quote(cell) {
+            self.inner.write_quoted_cell(cell)?;
+        } else {
+            self.inner.buf_writer.write_all(cell)?;
+        }
+
+        self.written += 1;
+
+        Ok(())
+    }
+
+    #[inline]
+    pub fn finalize_record(&mut self) -> error::Result<()> {
+        if self.written == 1 && self.empty {
+            self.inner
+                .buf_writer
+                .write_all(&[self.inner.quote, self.inner.quote])?;
+        }
+
+        self.inner.check_field_count(self.written)?;
+
+        self.inner
+            .buf_writer
+            .write_all(self.inner.line_terminator)?;
+
+        Ok(())
     }
 }
 
