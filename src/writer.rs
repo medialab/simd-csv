@@ -389,6 +389,20 @@ impl<W: Write> Writer<W> {
         FieldsWriter::new(self)
     }
 
+    #[inline]
+    pub fn write_fields<F>(&mut self, mut callback: F) -> error::Result<()>
+    where
+        F: FnMut(&mut FieldsWriter<W>) -> error::Result<()>,
+    {
+        let mut fields_writer = self.fields_writer();
+
+        callback(&mut fields_writer)?;
+
+        fields_writer.finalize_record()?;
+
+        Ok(())
+    }
+
     /// Attempt to unwrap the underlying [`BufWriter`] by flusing it and
     /// returning the original writer.
     #[inline]
@@ -397,6 +411,7 @@ impl<W: Write> Writer<W> {
     }
 }
 
+/// A fieldwise writer wrapping a [`Writer`] mutable reference.
 pub struct FieldsWriter<'a, W: Write> {
     inner: &'a mut Writer<W>,
     written: usize,
@@ -410,12 +425,6 @@ impl<'a, W: Write> FieldsWriter<'a, W> {
             written: 0,
             empty: false,
         }
-    }
-
-    #[inline]
-    pub fn reset(&mut self) {
-        self.written = 0;
-        self.empty = false;
     }
 
     pub fn write_field_no_quoting<F: AsRef<[u8]>>(&mut self, field: F) -> error::Result<()> {
@@ -472,6 +481,9 @@ impl<'a, W: Write> FieldsWriter<'a, W> {
             .buf_writer
             .write_all(self.inner.line_terminator)?;
 
+        self.written = 0;
+        self.empty = false;
+
         Ok(())
     }
 }
@@ -516,7 +528,7 @@ mod tests {
     }
 
     #[test]
-    fn should_quote() {
+    fn test_should_quote() {
         let writer = Writer::from_writer(Cursor::new(Vec::<u8>::new()));
 
         assert_eq!(writer.should_quote(b"test"), false);
@@ -528,5 +540,43 @@ mod tests {
             true
         );
         assert_eq!(writer.should_quote(b"te\rst"), true);
+    }
+
+    #[test]
+    fn test_fields_writer() -> io::Result<()> {
+        let mut writer = Writer::from_writer(Cursor::new(Vec::<u8>::new()));
+        let mut fields_writer = writer.fields_writer();
+
+        fields_writer.write_field("name")?;
+        fields_writer.write_field(b"surname")?;
+        fields_writer.finalize_record()?;
+
+        assert_eq!(writer.into_inner().unwrap().into_inner(), b"name,surname\n");
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_write_fields() -> io::Result<()> {
+        let mut writer = Writer::from_writer(Cursor::new(Vec::<u8>::new()));
+
+        writer.write_fields(|w| {
+            w.write_field("name")?;
+            w.write_field_no_quoting("surname")?;
+            Ok(())
+        })?;
+
+        writer.write_fields(|w| {
+            w.write_field("john")?;
+            w.write_field_no_quoting("landis")?;
+            Ok(())
+        })?;
+
+        assert_eq!(
+            writer.into_inner().unwrap().into_inner(),
+            b"name,surname\njohn,landis\n"
+        );
+
+        Ok(())
     }
 }

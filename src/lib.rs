@@ -440,7 +440,7 @@ pub use select::{ByteHeadersIndex, ColumIndexationBy, Selection, Selector};
 pub use splitter::{Splitter, SplitterBuilder};
 pub use total_reader::{TotalReader, TotalReaderBuilder};
 pub use utils::{unescape, AppendOnlyView};
-pub use writer::{Writer, WriterBuilder};
+pub use writer::{FieldsWriter, Writer, WriterBuilder};
 pub use zero_copy_reader::{ZeroCopyReader, ZeroCopyReaderBuilder};
 
 #[cfg(feature = "str")]
