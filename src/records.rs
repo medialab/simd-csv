@@ -709,6 +709,13 @@ mod string_record {
             }
         }
 
+        /// Create a new record with given capacity.
+        pub fn with_capacity(buffer: usize, fields: usize) -> Self {
+            Self {
+                inner: ByteRecord::with_capacity(buffer, fields),
+            }
+        }
+
         /// Return a reference to the underlying [`ByteRecord`] backing this record.
         #[inline(always)]
         pub fn as_byte_record(&self) -> &ByteRecord {
