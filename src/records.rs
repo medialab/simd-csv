@@ -300,6 +300,14 @@ impl ByteRecord {
         Self::default()
     }
 
+    /// Create a single field record from given bytes vector
+    pub fn from_field(data: Vec<u8>) -> Self {
+        Self {
+            bounds: vec![(0, data.len())],
+            data,
+        }
+    }
+
     /// Create a new record with given capacity.
     pub fn with_capacity(buffer: usize, fields: usize) -> Self {
         Self {
@@ -999,5 +1007,17 @@ mod tests {
         assert_eq!(reversed, brec!["ega", "emanrus", "eman"]);
         reversed.reverse();
         assert_eq!(record, reversed);
+    }
+
+    #[test]
+    fn test_from_field() {
+        let field = b"john".to_vec();
+        let mut record = ByteRecord::from_field(field);
+
+        assert_eq!(record, brec!["john"]);
+
+        record.push_field(b"landis");
+
+        assert_eq!(record, brec!["john", "landis"]);
     }
 }
