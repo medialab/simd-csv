@@ -4,7 +4,7 @@ use std::slice::Iter;
 
 type IndicesIter<'a> = Copied<Iter<'a, usize>>;
 
-/// A selection of column indices.
+/// A aligned selection of column indices.
 pub struct Selection {
     indices: Vec<usize>,
     alignment: usize,
@@ -17,34 +17,54 @@ impl Selection {
         Self { indices, alignment }
     }
 
+    /// Create a full selection having all indices in the 0..len range.
     pub fn full(len: usize) -> Self {
         Self::new((0..len).collect(), len)
     }
 
+    /// Create a full selection having all indices in the 0..len range but the given one.
     pub fn without(i: usize, len: usize) -> Self {
         Self::new((0..len).filter(|j| i != *j).collect(), len)
     }
 
+    /// Return a new selection that is the inverse of the current one, i.e.
+    /// having all indices that are not in current selection wrt alignment.
+    ///
+    /// This will ignore any duplicated indices.
+    pub fn inverse(&self) -> Self {
+        Self::new(
+            (0..self.alignment)
+                .filter(|i| !self.indices.contains(i))
+                .collect(),
+            self.alignment,
+        )
+    }
+
+    /// Return the number of indices of the selection
     #[inline(always)]
     pub fn len(&self) -> usize {
         self.indices.len()
     }
 
+    /// Return whether the selection is empty
     #[inline(always)]
     pub fn is_empty(&self) -> bool {
         self.indices.is_empty()
     }
 
+    /// Sort the selection indices
     #[inline(always)]
     pub fn sort(&mut self) {
         self.indices.sort();
     }
 
+    /// Sort and deduplicate the selection indices
     pub fn sort_and_dedup(&mut self) {
         self.sort();
         self.indices.dedup();
     }
 
+    /// Deduplicate the selection indices, retaining its global order
     pub fn dedup(&mut self) {
         let mut seen = Vec::with_capacity(self.len());
 
@@ -151,5 +171,16 @@ mod tests {
         selection.dedup();
 
         assert_eq!(selection.into_inner(), &[3, 1, 2, 6, 0]);
+    }
+
+    #[test]
+    fn test_inverse() {
+        let selection = Selection::new(vec![0, 2, 4], 6);
+
+        assert_eq!(selection.inverse().into_inner(), &[1, 3, 5]);
+
+        let selection = Selection::new(vec![0, 2, 2, 4, 0], 6);
+
+        assert_eq!(selection.inverse().into_inner(), &[1, 3, 5]);
     }
 }
