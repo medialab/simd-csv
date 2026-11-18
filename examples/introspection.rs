@@ -32,14 +32,29 @@ fn main() -> anyhow::Result<()> {
 
     let mut record = simd_csv::ByteRecord::new();
     let mut data = Vec::new();
+    let mut count: u64 = 0;
+    let mut count_quoted: u64 = 0;
+    let mut cell_len_sum: u64 = 0;
 
     while reader.read_byte_record(&mut record)? {
+        let mut any_quoted = false;
+
         for cell in record.iter() {
+            cell_len_sum += cell.len() as u64;
+
             let i = cell
                 .iter()
                 .position(|&c| c == b'"' || c == delimiter || c == b'\r' || c == b'\n');
 
+            any_quoted |= i.is_some();
+
             data.push(i);
+        }
+
+        count += 1;
+
+        if any_quoted {
+            count_quoted += 1;
         }
     }
 
@@ -54,6 +69,12 @@ fn main() -> anyhow::Result<()> {
     let median = first_char_positions[first_char_positions.len() / 2];
 
     let max_char_position = *first_char_positions.iter().max().unwrap();
+
+    eprintln!("Number of rows: {}", count);
+    eprintln!(
+        "Ratio of rows with at least one column quoted: {}",
+        count_quoted as f64 / count as f64
+    );
 
     eprintln!(
         "Ratio of cells needing quote: {}",
@@ -73,6 +94,11 @@ fn main() -> anyhow::Result<()> {
     eprintln!(
         "Max position of first char needing to be quoted: {}",
         max_char_position
+    );
+
+    eprintln!(
+        "Mean cell length: {}",
+        cell_len_sum as f64 / data.len() as f64
     );
 
     Ok(())
