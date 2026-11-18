@@ -25,14 +25,37 @@ impl Selection {
         Self::new((0..len).filter(|j| i != *j).collect(), len)
     }
 
-    #[inline]
+    #[inline(always)]
     pub fn len(&self) -> usize {
         self.indices.len()
     }
 
-    #[inline]
+    #[inline(always)]
     pub fn is_empty(&self) -> bool {
         self.indices.is_empty()
+    }
+
+    #[inline(always)]
+    pub fn sort(&mut self) {
+        self.indices.sort();
+    }
+
+    pub fn sort_and_dedup(&mut self) {
+        self.sort();
+        self.indices.dedup();
+    }
+
+    pub fn dedup(&mut self) {
+        let mut seen = Vec::with_capacity(self.len());
+
+        self.indices.retain(|i| {
+            if !seen.contains(i) {
+                seen.push(*i);
+                true
+            } else {
+                false
+            }
+        });
     }
 
     #[inline]
@@ -46,7 +69,7 @@ impl Selection {
         self.indices.iter().map(|i| &row[*i])
     }
 
-    #[inline]
+    #[inline(always)]
     pub fn iter(&self) -> IndicesIter<'_> {
         self.indices.iter().copied()
     }
@@ -76,13 +99,18 @@ impl Selection {
 
         mask
     }
+
+    #[inline]
+    pub fn into_inner(self) -> Vec<usize> {
+        self.indices
+    }
 }
 
 impl<'a> IntoIterator for &'a Selection {
     type Item = usize;
     type IntoIter = IndicesIter<'a>;
 
-    #[inline]
+    #[inline(always)]
     fn into_iter(self) -> Self::IntoIter {
         self.iter()
     }
@@ -91,8 +119,37 @@ impl<'a> IntoIterator for &'a Selection {
 impl Index<usize> for Selection {
     type Output = usize;
 
-    #[inline]
+    #[inline(always)]
     fn index(&self, index: usize) -> &Self::Output {
         &self.indices[index]
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_sort() {
+        let mut selection = Selection::new(vec![3, 1, 1, 2, 6, 0], 7);
+        selection.sort();
+
+        assert_eq!(selection.into_inner(), &[0, 1, 1, 2, 3, 6]);
+    }
+
+    #[test]
+    fn test_sort_and_dedup() {
+        let mut selection = Selection::new(vec![3, 1, 1, 2, 6, 0], 7);
+        selection.sort_and_dedup();
+
+        assert_eq!(selection.into_inner(), &[0, 1, 2, 3, 6]);
+    }
+
+    #[test]
+    fn test_dedup() {
+        let mut selection = Selection::new(vec![3, 1, 1, 2, 6, 0, 1, 3], 7);
+        selection.dedup();
+
+        assert_eq!(selection.into_inner(), &[3, 1, 2, 6, 0]);
     }
 }
