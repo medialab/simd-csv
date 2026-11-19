@@ -651,7 +651,7 @@ impl<'r> ByteRecordBuilder<'r> {
         self.record.data.push(byte);
     }
 
-    #[inline]
+    #[inline(always)]
     pub(crate) fn finalize_field(&mut self) {
         let start = self.start;
         self.start = self.record.data.len();
@@ -659,16 +659,19 @@ impl<'r> ByteRecordBuilder<'r> {
         self.record.bounds.push((start, self.start));
     }
 
-    #[inline]
+    #[inline(always)]
     pub(crate) fn finalize_record(&mut self) {
-        self.finalize_field();
+        let end = self.record.data.len();
+        let start = self.start;
 
-        if let Some((start, end)) = self.record.bounds.last_mut() {
-            if let Some(b'\r') = self.record.data[*start..*end].last() {
-                *end -= 1;
-                self.record.data.pop();
-            }
+        if start < end && self.record.data.last() == Some(&b'\r') {
+            self.record.data.pop();
+            self.record.bounds.push((start, end - 1));
+        } else {
+            self.record.bounds.push((start, end));
         }
+
+        self.start = end;
     }
 
     #[inline]
