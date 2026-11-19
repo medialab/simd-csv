@@ -225,6 +225,8 @@ impl<W: Write> Writer<W> {
     #[inline]
     fn should_quote(&self, mut cell: &[u8]) -> bool {
         // This strategy comes directly from `rust-csv`
+        // Using SIMD or SWAR here seems always counter-productive since
+        // we need to test cells one by one.
         let mut yes = false;
         while !yes && cell.len() >= 8 {
             yes = self.must_quote[cell[0] as usize]
