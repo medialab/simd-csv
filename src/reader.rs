@@ -915,6 +915,25 @@ mod tests {
         Ok(())
     }
 
+    #[test]
+    fn test_quoted_field_ending_crlf() -> error::Result<()> {
+        // Spurious char
+        let reader = Reader::from_reader_no_headers(Cursor::new(b"\"john\"\rX\nnext\n"));
+
+        let records = reader.into_byte_records().collect::<Result<Vec<_>, _>>()?;
+
+        assert_eq!(records, vec![brec!["john\rX"], brec!["next"]]);
+
+        // Proper alignment
+        let reader = Reader::from_reader_no_headers(Cursor::new(b"\"john\"\r\nnext\n"));
+
+        let records = reader.into_byte_records().collect::<Result<Vec<_>, _>>()?;
+
+        assert_eq!(records, vec![brec!["john"], brec!["next"]]);
+
+        Ok(())
+    }
+
     // #[test]
     // fn test_fuzzing_failures() -> error::Result<()> {
     //     let data = [13u8, 13, 96, 34, 34, 44, 10, 44, 96, 34, 13, 34, 44, 10];

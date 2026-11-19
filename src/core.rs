@@ -521,7 +521,7 @@ impl CoreReader {
                         self.state = Unquoted;
                         record_builder.finalize_field();
                         return (ReadResult::Record, pos + 1);
-                    } else if byte == b'\r' && pos + 2 < input_len && input[pos + 2] == b'\n' {
+                    } else if byte == b'\r' && pos + 1 < input_len && input[pos + 1] == b'\n' {
                         self.record_was_read = true;
                         self.state = Unquoted;
                         record_builder.finalize_field();
