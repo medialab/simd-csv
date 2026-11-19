@@ -39,9 +39,9 @@ impl<W: Write> BinaryWriter<W> {
         self.buf_writer
             .write_all(&(data.len() as u32).to_le_bytes())?;
 
-        for (start, end) in bounds {
-            self.buf_writer.write_all(&(*start as u32).to_le_bytes())?;
-            self.buf_writer.write_all(&(*end as u32).to_le_bytes())?;
+        for bounds in bounds {
+            self.buf_writer.write_all(&bounds.0.to_le_bytes())?;
+            self.buf_writer.write_all(&bounds.1.to_le_bytes())?;
         }
 
         self.buf_writer.write_all(data)?;
@@ -127,7 +127,7 @@ impl<R: Read> BinaryReader<R> {
 
             let end = u32::from_le_bytes(self.buffer[s..s + 4].try_into().unwrap());
 
-            record.bounds.push((start as usize, end as usize));
+            record.bounds.push((start, end));
         }
 
         unsafe {

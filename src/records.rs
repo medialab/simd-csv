@@ -10,6 +10,12 @@ use crate::utils::{trim_trailing_crlf, unescape, unescape_to, unquoted, AppendOn
 #[cfg(feature = "str")]
 use crate::error::{self, Error, ErrorKind};
 
+#[inline(always)]
+fn offset(position: usize) -> u32 {
+    debug_assert!(position <= u32::MAX as usize);
+    position as u32
+}
+
 /// A view of a CSV record into a [`ZeroCopyReader`](crate::ZeroCopyReader) buffer.
 pub struct ZeroCopyByteRecord<'a> {
     slice: &'a [u8],
@@ -168,7 +174,7 @@ impl<'a> ZeroCopyByteRecord<'a> {
                     record.bounds[bounds_len - 1].1
                 };
 
-                record.bounds.push((start, record.data.len()));
+                record.bounds.push((start, offset(record.data.len())));
             } else {
                 record.push_field(cell);
             }
@@ -291,7 +297,7 @@ impl Index<usize> for ZeroCopyByteRecord<'_> {
 #[derive(Default, Clone, Eq)]
 pub struct ByteRecord {
     pub(crate) data: Vec<u8>,
-    pub(crate) bounds: Vec<(usize, usize)>,
+    pub(crate) bounds: Vec<(u32, u32)>,
 }
 
 impl ByteRecord {
@@ -303,7 +309,7 @@ impl ByteRecord {
     /// Create a single field record from given bytes vector
     pub fn from_field(data: Vec<u8>) -> Self {
         Self {
-            bounds: vec![(0, data.len())],
+            bounds: vec![(0, offset(data.len()))],
             data,
         }
     }
@@ -341,8 +347,8 @@ impl ByteRecord {
     pub fn truncate(&mut self, len: usize) {
         self.bounds.truncate(len);
 
-        if let Some((_, end)) = self.bounds.last() {
-            self.data.truncate(*end);
+        if let Some(bounds) = self.bounds.last() {
+            self.data.truncate(bounds.1 as usize);
         } else {
             self.data.clear();
         }
@@ -361,7 +367,7 @@ impl ByteRecord {
 
     #[inline]
     #[cfg(feature = "binary")]
-    pub(crate) fn as_parts(&self) -> (&[(usize, usize)], &[u8]) {
+    pub(crate) fn as_parts(&self) -> (&[(u32, u32)], &[u8]) {
         (&self.bounds, &self.data)
     }
 
@@ -388,7 +394,7 @@ impl ByteRecord {
             self.bounds[bounds_len - 1].1
         };
 
-        self.bounds.push((start, self.data.len()));
+        self.bounds.push((start, offset(self.data.len())));
     }
 
     /// Push a new field to the back of the record by formatting given [`fmt::Display`]
@@ -405,7 +411,7 @@ impl ByteRecord {
             self.bounds[bounds_len - 1].1
         };
 
-        self.bounds.push((start, self.data.len()));
+        self.bounds.push((start, offset(self.data.len())));
     }
 
     /// Push a new field to the back of the record by writing to this record's back
@@ -425,7 +431,7 @@ impl ByteRecord {
             self.bounds[bounds_len - 1].1
         };
 
-        self.bounds.push((start, self.data.len()));
+        self.bounds.push((start, offset(self.data.len())));
     }
 
     #[inline]
@@ -440,10 +446,10 @@ impl ByteRecord {
             self.bounds[bounds_len - 1].1
         };
 
-        let bounds = (start, self.data.len());
-        self.data[bounds.0..bounds.1].reverse();
+        let end = offset(self.data.len());
+        self.data[start as usize..end as usize].reverse();
 
-        self.bounds.push(bounds);
+        self.bounds.push((start, end));
     }
 
     /// Return field at `index`. Will return `None` if `index` is out of bounds.
@@ -452,7 +458,7 @@ impl ByteRecord {
         self.bounds
             .get(index)
             .copied()
-            .map(|(start, end)| &self.data[start..end])
+            .map(|(start, end)| &self.data[start as usize..end as usize])
     }
 
     /// Attempt to decode given byte record.
@@ -471,7 +477,7 @@ impl ByteRecord {
         self.data.reverse();
         self.bounds.reverse();
 
-        let len = self.data.len();
+        let len = offset(self.data.len());
 
         for (start, end) in self.bounds.iter_mut() {
             let new_end = len - *start;
@@ -595,7 +601,7 @@ impl<'a> Iterator for ByteRecordIter<'a> {
 
             self.current_forward += 1;
 
-            Some(&self.record.data[start..end])
+            Some(&self.record.data[start as usize..end as usize])
         }
     }
 
@@ -625,14 +631,14 @@ impl DoubleEndedIterator for ByteRecordIter<'_> {
 
             let (start, end) = self.record.bounds[self.current_backward];
 
-            Some(&self.record.data[start..end])
+            Some(&self.record.data[start as usize..end as usize])
         }
     }
 }
 
 pub(crate) struct ByteRecordBuilder<'r> {
     record: &'r mut ByteRecord,
-    start: usize,
+    start: u32,
 }
 
 impl<'r> ByteRecordBuilder<'r> {
@@ -654,14 +660,14 @@ impl<'r> ByteRecordBuilder<'r> {
     #[inline(always)]
     pub(crate) fn finalize_field(&mut self) {
         let start = self.start;
-        self.start = self.record.data.len();
+        self.start = offset(self.record.data.len());
 
         self.record.bounds.push((start, self.start));
     }
 
     #[inline(always)]
     pub(crate) fn finalize_record(&mut self) {
-        let end = self.record.data.len();
+        let end = offset(self.record.data.len());
         let start = self.start;
 
         if start < end && self.record.data.last() == Some(&b'\r') {
@@ -675,9 +681,9 @@ impl<'r> ByteRecordBuilder<'r> {
     }
 
     #[inline]
-    pub(crate) fn finalize_field_preemptively(&mut self, offset: usize) {
+    pub(crate) fn finalize_field_preemptively(&mut self, field_offset: usize) {
         let start = self.start;
-        self.start = self.record.data.len() + offset;
+        self.start = offset(self.record.data.len() + field_offset);
 
         self.record.bounds.push((start, self.start));
 
@@ -686,8 +692,13 @@ impl<'r> ByteRecordBuilder<'r> {
 
     #[inline(always)]
     pub(crate) fn bump(&mut self) {
-        self.start +=
-            (self.record.bounds.last().map(|(s, _)| *s).unwrap_or(0) != self.start) as usize;
+        self.start += (self
+            .record
+            .bounds
+            .last()
+            .map(|bounds| bounds.0)
+            .unwrap_or(0)
+            != self.start) as u32;
     }
 }
 
@@ -885,7 +896,9 @@ mod string_record {
 
                 self.current_forward += 1;
 
-                Some(unsafe { std::str::from_utf8_unchecked(&self.record.data[start..end]) })
+                Some(unsafe {
+                    std::str::from_utf8_unchecked(&self.record.data[start as usize..end as usize])
+                })
             }
         }
 
@@ -915,7 +928,9 @@ mod string_record {
 
                 let (start, end) = self.record.bounds[self.current_backward];
 
-                Some(unsafe { std::str::from_utf8_unchecked(&self.record.data[start..end]) })
+                Some(unsafe {
+                    std::str::from_utf8_unchecked(&self.record.data[start as usize..end as usize])
+                })
             }
         }
     }
