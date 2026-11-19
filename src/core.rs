@@ -245,7 +245,7 @@ impl CoreReader {
     // large chunk of bytes, branchlessly, to find structural chars, then applying
     // the branching state-machine over found chars.
 
-    // pub(crate) fn split_record_and_find_separators_fast(
+    // pub(crate) fn split_record_and_find_separators(
     //     &mut self,
     //     input: &[u8],
     //     seps_offset: usize,
@@ -353,7 +353,7 @@ impl CoreReader {
     // work, without changing speed, and wrapping the state machine inside the
     // search breakpoints, i.e. when hitting a structural char.
 
-    // pub(crate) fn split_record_and_find_separators_alt(
+    // pub(crate) fn split_record_and_find_separators(
     //     &mut self,
     //     input: &[u8],
     //     seps_offset: usize,
