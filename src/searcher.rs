@@ -7,7 +7,7 @@ mod x86_64 {
     use crate::ext::Pointer;
 
     #[inline(always)]
-    fn get_for_offset(mask: u32) -> u32 {
+    fn get_for_offset(mask: u64) -> u64 {
         #[cfg(target_endian = "big")]
         {
             mask.swap_bytes()
@@ -19,12 +19,12 @@ mod x86_64 {
     }
 
     #[inline(always)]
-    fn first_offset(mask: u32) -> usize {
+    fn first_offset(mask: u64) -> usize {
         get_for_offset(mask).trailing_zeros() as usize
     }
 
     #[inline(always)]
-    fn clear_least_significant_bit(mask: u32) -> u32 {
+    fn clear_least_significant_bit(mask: u64) -> u64 {
         mask & (mask - 1)
     }
 
@@ -73,6 +73,7 @@ mod x86_64 {
         };
 
         const CHUNK_SIZE: usize = 32;
+        const DOUBLE_CHUNK_SIZE: usize = CHUNK_SIZE * 2;
 
         #[derive(Debug)]
         pub struct AVX2Searcher {
@@ -106,7 +107,8 @@ mod x86_64 {
             start: *const u8,
             end: *const u8,
             current: *const u8,
-            mask: u32,
+            mask_start: *const u8,
+            mask: u64,
         }
 
         impl<'s, 'h> AVX2Indices<'s, 'h> {
@@ -120,6 +122,7 @@ mod x86_64 {
                     start: ptr,
                     end: ptr.wrapping_add(haystack.len()),
                     current: ptr,
+                    mask_start: ptr,
                     mask: 0,
                 }
             }
@@ -134,6 +137,7 @@ mod x86_64 {
 
                 let mut mask = self.mask;
                 let mut current = self.current;
+                let mut mask_start = self.mask_start;
                 let start = self.start;
                 let len = self.end.distance(start);
                 let delimiter_splat = self.searcher.delimiter_splat;
@@ -141,11 +145,44 @@ mod x86_64 {
 
                 'main: loop {
                     if mask != 0 {
-                        let offset = current.sub(CHUNK_SIZE).add(first_offset(mask));
+                        let offset = mask_start.add(first_offset(mask));
                         self.mask = clear_least_significant_bit(mask);
                         self.current = current;
+                        self.mask_start = mask_start;
 
                         return Some(offset.distance(start));
+                    }
+
+                    if len >= DOUBLE_CHUNK_SIZE {
+                        let vectorized_end = self.end.sub(DOUBLE_CHUNK_SIZE);
+
+                        while current <= vectorized_end {
+                            let first_chunk = _mm256_loadu_si256(current as *const __m256i);
+                            let second_chunk =
+                                _mm256_loadu_si256(current.add(CHUNK_SIZE) as *const __m256i);
+
+                            let first_delimiter_cmp =
+                                _mm256_cmpeq_epi8(first_chunk, delimiter_splat);
+                            let first_newline_cmp = _mm256_cmpeq_epi8(first_chunk, newline_splat);
+                            let first_cmp = _mm256_or_si256(first_delimiter_cmp, first_newline_cmp);
+
+                            let second_delimiter_cmp =
+                                _mm256_cmpeq_epi8(second_chunk, delimiter_splat);
+                            let second_newline_cmp = _mm256_cmpeq_epi8(second_chunk, newline_splat);
+                            let second_cmp =
+                                _mm256_or_si256(second_delimiter_cmp, second_newline_cmp);
+
+                            let first_mask = _mm256_movemask_epi8(first_cmp) as u32;
+                            let second_mask = _mm256_movemask_epi8(second_cmp) as u32;
+                            mask = first_mask as u64 | ((second_mask as u64) << 32);
+
+                            mask_start = current;
+                            current = current.add(DOUBLE_CHUNK_SIZE);
+
+                            if mask != 0 {
+                                continue 'main;
+                            }
+                        }
                     }
 
                     if len >= CHUNK_SIZE {
@@ -157,7 +194,8 @@ mod x86_64 {
                             let newline_cmp = _mm256_cmpeq_epi8(chunk, newline_splat);
                             let cmp = _mm256_or_si256(delimiter_cmp, newline_cmp);
 
-                            mask = _mm256_movemask_epi8(cmp) as u32;
+                            mask = _mm256_movemask_epi8(cmp) as u32 as u64;
+                            mask_start = current;
                             current = current.add(CHUNK_SIZE);
 
                             if mask != 0 {
