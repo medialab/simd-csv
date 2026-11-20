@@ -68,7 +68,7 @@ mod x86_64 {
         use super::*;
 
         use core::arch::x86_64::{
-            __m256i, _mm256_cmpeq_epi8, _mm256_loadu_si256, _mm256_movemask_epi8, _mm256_or_si256,
+            __m256i, _mm256_cmpeq_epi8, _mm256_load_si256, _mm256_movemask_epi8, _mm256_or_si256,
             _mm256_set1_epi8,
         };
 
@@ -153,13 +153,27 @@ mod x86_64 {
                         return Some(offset.distance(start));
                     }
 
+                    let alignment_offset =
+                        (CHUNK_SIZE - (current as usize & (CHUNK_SIZE - 1))) & (CHUNK_SIZE - 1);
+                    let prefix_end = current.add(alignment_offset.min(self.end.distance(current)));
+
+                    while current < prefix_end {
+                        if *current == self.searcher.delimiter || *current == self.searcher.newline
+                        {
+                            let offset = current.distance(start);
+                            self.current = current.add(1);
+                            return Some(offset);
+                        }
+                        current = current.add(1);
+                    }
+
                     if len >= DOUBLE_CHUNK_SIZE {
                         let vectorized_end = self.end.sub(DOUBLE_CHUNK_SIZE);
 
                         while current <= vectorized_end {
-                            let first_chunk = _mm256_loadu_si256(current as *const __m256i);
+                            let first_chunk = _mm256_load_si256(current as *const __m256i);
                             let second_chunk =
-                                _mm256_loadu_si256(current.add(CHUNK_SIZE) as *const __m256i);
+                                _mm256_load_si256(current.add(CHUNK_SIZE) as *const __m256i);
 
                             let first_delimiter_cmp =
                                 _mm256_cmpeq_epi8(first_chunk, delimiter_splat);
@@ -189,7 +203,7 @@ mod x86_64 {
                         let vectorized_end = self.end.sub(CHUNK_SIZE);
 
                         while current <= vectorized_end {
-                            let chunk = _mm256_loadu_si256(current as *const __m256i);
+                            let chunk = _mm256_load_si256(current as *const __m256i);
                             let delimiter_cmp = _mm256_cmpeq_epi8(chunk, delimiter_splat);
                             let newline_cmp = _mm256_cmpeq_epi8(chunk, newline_splat);
                             let cmp = _mm256_or_si256(delimiter_cmp, newline_cmp);
