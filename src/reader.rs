@@ -719,6 +719,28 @@ mod tests {
     }
 
     #[test]
+    fn test_quoted_field_start_across_buffer_boundaries() -> error::Result<()> {
+        let csv = b"plain,\"quoted, field\",tail\nnext,\"value\",last\n";
+        let expected = vec![
+            brec!["plain", "quoted, field", "tail"],
+            brec!["next", "value", "last"],
+        ];
+
+        for capacity in [1, 2, 3, 4] {
+            let mut reader = ReaderBuilder::with_capacity(capacity)
+                .has_headers(false)
+                .from_reader(Cursor::new(csv));
+
+            assert_eq!(
+                reader.byte_records().collect::<Result<Vec<_>, _>>()?,
+                expected,
+            );
+        }
+
+        Ok(())
+    }
+
+    #[test]
     fn test_byte_headers() -> error::Result<()> {
         let data = b"name,surname\njohn,dandy";
 
@@ -769,7 +791,7 @@ mod tests {
 
     #[test]
     fn test_weirdness() -> error::Result<()> {
-        // Data after quotes, before next delimiter
+        // Quotes after non-delimiter data are treated literally.
         let data =
             b"name,surname\n\"test\"  \"wat\", ok\ntest \"wat\",ok  \ntest,\"whatever\"  ok\n\"test\"   there,\"ok\"\r\n";
         let mut reader = Reader::from_reader_no_headers(Cursor::new(data));
@@ -778,8 +800,8 @@ mod tests {
 
         let expected = vec![
             brec!["name", "surname"],
-            brec!["test  \"wat", " ok"],
-            brec!["test \"wat", "ok  "],
+            brec!["test  \"wat\"", " ok"],
+            brec!["test \"wat\"", "ok  "],
             brec!["test", "whatever  ok"],
             brec!["test   there", "ok"],
         ];
@@ -882,11 +904,11 @@ mod tests {
             .from_reader(&data[..]);
 
         reader.read_byte_record(&mut record)?;
-        assert_eq!(record, brec!["`\"", ""]);
+        assert_eq!(record, brec!["`\"\"", ""]);
 
         reader.read_byte_record(&mut record)?;
 
-        assert_eq!(record, brec!["", "\"\r", ""]);
+        assert_eq!(record, brec!["", "`\"\r\"", ""]);
 
         Ok(())
     }

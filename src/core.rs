@@ -14,6 +14,7 @@ pub enum ReadResult {
 
 #[derive(Debug, Clone, Copy)]
 enum ReadState {
+    FieldStart,
     Unquoted,
     Quoted,
     Quote,
@@ -37,10 +38,10 @@ impl CoreReader {
         Self {
             delimiter,
             quote,
-            state: ReadState::Unquoted,
+            state: ReadState::FieldStart,
             // Must be true at the beginning to avoid counting one record for empty input
             record_was_read: true,
-            searcher: Searcher::new(delimiter, b'\n', quote),
+            searcher: Searcher::new(delimiter, b'\n'),
         }
     }
 
@@ -72,14 +73,15 @@ impl CoreReader {
 
         while pos < input_len {
             match self.state {
-                Unquoted => {
-                    // Fast path for quoted field start
+                FieldStart => {
                     if input[pos] == self.quote {
                         self.state = Quoted;
                         pos += 1;
-                        continue;
+                    } else {
+                        self.state = Unquoted;
                     }
-
+                }
+                Unquoted => {
                     // Here we are moving to next quote or end of line
                     if let Some(offset) = memchr2(b'\n', self.quote, &input[pos..]) {
                         pos += offset;
@@ -90,6 +92,7 @@ impl CoreReader {
 
                         if byte == b'\n' {
                             self.record_was_read = true;
+                            self.state = FieldStart;
                             return (ReadResult::Record, pos);
                         }
 
@@ -117,14 +120,14 @@ impl CoreReader {
                         self.state = Quoted;
                     } else if byte == b'\n' {
                         self.record_was_read = true;
-                        self.state = Unquoted;
+                        self.state = FieldStart;
                         return (ReadResult::Record, pos);
                     } else if byte == b'\r' && pos + 1 < input_len && input[pos + 1] == b'\n' {
                         self.record_was_read = true;
-                        self.state = Unquoted;
+                        self.state = FieldStart;
                         return (ReadResult::Record, pos + 1);
                     } else {
-                        self.state = Unquoted;
+                        self.state = FieldStart;
                     }
                 }
             }
@@ -166,15 +169,17 @@ impl CoreReader {
 
         while pos < input_len {
             match self.state {
-                Unquoted => {
-                    // Fast path for quoted field start
+                FieldStart => {
                     if input[pos] == self.quote {
                         self.state = Quoted;
                         pos += 1;
-                        continue;
+                    } else {
+                        self.state = Unquoted;
                     }
+                }
+                Unquoted => {
+                    // Here we are moving to next delimiter or end of line
 
-                    // Here we are moving to next quote or end of line
                     let mut last_offset: usize = 0;
 
                     for offset in self.searcher.search(&input[pos..]) {
@@ -184,17 +189,26 @@ impl CoreReader {
 
                         if byte == self.delimiter {
                             seps.push(seps_offset + pos + offset);
+
+                            let next_pos = pos + last_offset;
+
+                            if next_pos < input_len && input[next_pos] == self.quote {
+                                self.state = Quoted;
+                                last_offset += 1;
+                                break;
+                            }
+
+                            if next_pos == input_len {
+                                self.state = FieldStart;
+                                break;
+                            }
+
                             continue;
                         }
 
-                        if byte == b'\n' {
-                            self.record_was_read = true;
-                            return (ReadResult::Record, pos + last_offset);
-                        }
-
-                        // Here, `byte` is guaranteed to be a quote
-                        self.state = Quoted;
-                        break;
+                        self.record_was_read = true;
+                        self.state = FieldStart;
+                        return (ReadResult::Record, pos + last_offset);
                     }
 
                     if last_offset > 0 {
@@ -221,14 +235,14 @@ impl CoreReader {
                         self.state = Quoted;
                     } else if byte == self.delimiter {
                         seps.push(seps_offset + pos - 1);
-                        self.state = Unquoted;
+                        self.state = FieldStart;
                     } else if byte == b'\n' {
                         self.record_was_read = true;
-                        self.state = Unquoted;
+                        self.state = FieldStart;
                         return (ReadResult::Record, pos);
                     } else if byte == b'\r' && pos + 1 < input_len && input[pos + 1] == b'\n' {
                         self.record_was_read = true;
-                        self.state = Unquoted;
+                        self.state = FieldStart;
                         return (ReadResult::Record, pos + 1);
                     } else {
                         self.state = Unquoted;
@@ -454,15 +468,17 @@ impl CoreReader {
 
         while pos < input_len {
             match self.state {
-                Unquoted => {
-                    // Fast path for quoted field start
+                FieldStart => {
                     if input[pos] == self.quote {
                         self.state = Quoted;
                         pos += 1;
-                        continue;
+                    } else {
+                        self.state = Unquoted;
                     }
+                }
+                Unquoted => {
+                    // Here we are moving to next delimiter or end of line
 
-                    // Here we are moving to next quote or end of line
                     let mut last_offset: usize = 0;
 
                     for offset in self.searcher.search(&input[pos..]) {
@@ -474,20 +490,29 @@ impl CoreReader {
                         // because of multiple tiny copies.
                         if byte == self.delimiter {
                             record_builder.finalize_field_preemptively(offset);
+
+                            let next_pos = pos + last_offset;
+
+                            if next_pos < input_len && input[next_pos] == self.quote {
+                                self.state = Quoted;
+                                record_builder.bump();
+                                last_offset += 1;
+                                break;
+                            }
+
+                            if next_pos == input_len {
+                                self.state = FieldStart;
+                                break;
+                            }
+
                             continue;
                         }
 
-                        if byte == b'\n' {
-                            record_builder.extend_from_slice(&input[pos..pos + offset]);
-                            record_builder.finalize_record();
-                            self.record_was_read = true;
-                            return (ReadResult::Record, pos + last_offset);
-                        }
-
-                        // Here, `byte` is guaranteed to be a quote
-                        self.state = Quoted;
-                        record_builder.bump();
-                        break;
+                        record_builder.extend_from_slice(&input[pos..pos + offset]);
+                        record_builder.finalize_record();
+                        self.record_was_read = true;
+                        self.state = FieldStart;
+                        return (ReadResult::Record, pos + last_offset);
                     }
 
                     if last_offset > 0 {
@@ -517,15 +542,15 @@ impl CoreReader {
                     } else if byte == self.delimiter {
                         record_builder.finalize_field();
                         pos += 1;
-                        self.state = Unquoted;
+                        self.state = FieldStart;
                     } else if byte == b'\n' {
                         self.record_was_read = true;
-                        self.state = Unquoted;
+                        self.state = FieldStart;
                         record_builder.finalize_field();
                         return (ReadResult::Record, pos + 1);
                     } else if byte == b'\r' && pos + 1 < input_len && input[pos + 1] == b'\n' {
                         self.record_was_read = true;
-                        self.state = Unquoted;
+                        self.state = FieldStart;
                         record_builder.finalize_field();
                         return (ReadResult::Record, pos + 2);
                     } else {
