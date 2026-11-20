@@ -429,10 +429,17 @@ impl<'a, W: Write> FieldsWriter<'a, W> {
         }
     }
 
-    pub fn write_field_no_quoting<F: AsRef<[u8]>>(&mut self, field: F) -> error::Result<()> {
+    #[inline(always)]
+    fn emit_delimiter(&mut self) -> error::Result<()> {
         if self.written > 0 {
             self.inner.buf_writer.write_all(&[self.inner.delimiter])?;
         }
+
+        Ok(())
+    }
+
+    pub fn write_field_no_quoting<F: AsRef<[u8]>>(&mut self, field: F) -> error::Result<()> {
+        self.emit_delimiter()?;
 
         let cell = field.as_ref();
 
@@ -448,9 +455,7 @@ impl<'a, W: Write> FieldsWriter<'a, W> {
     }
 
     pub fn write_field<F: AsRef<[u8]>>(&mut self, field: F) -> error::Result<()> {
-        if self.written > 0 {
-            self.inner.buf_writer.write_all(&[self.inner.delimiter])?;
-        }
+        self.emit_delimiter()?;
 
         let cell = field.as_ref();
 
@@ -465,6 +470,38 @@ impl<'a, W: Write> FieldsWriter<'a, W> {
         }
 
         self.written += 1;
+
+        Ok(())
+    }
+
+    #[inline]
+    pub fn write_zero_copy_byte_record(
+        &mut self,
+        delimiter: u8,
+        record: &ZeroCopyByteRecord,
+    ) -> error::Result<()> {
+        self.emit_delimiter()?;
+
+        // TODO: we probably need to deal with self.empty
+
+        if self.inner.delimiter == delimiter && record.quote == self.inner.quote {
+            self.inner.buf_writer.write_all(record.as_slice())?;
+        } else {
+            for cell in record.unescaped_iter() {
+                self.write_field(cell)?;
+            }
+        }
+
+        Ok(())
+    }
+
+    #[inline]
+    pub fn write_splitted_record(&mut self, record: &[u8]) -> error::Result<()> {
+        self.emit_delimiter()?;
+
+        // TODO: we probably need to deal with self.empty
+
+        self.inner.buf_writer.write_all(record)?;
 
         Ok(())
     }
@@ -551,9 +588,13 @@ mod tests {
 
         fields_writer.write_field("name")?;
         fields_writer.write_field(b"surname")?;
+        fields_writer.write_splitted_record(b"age,color")?;
         fields_writer.finalize_record()?;
 
-        assert_eq!(writer.into_inner().unwrap().into_inner(), b"name,surname\n");
+        assert_eq!(
+            writer.into_inner().unwrap().into_inner(),
+            b"name,surname,age,color\n"
+        );
 
         Ok(())
     }
