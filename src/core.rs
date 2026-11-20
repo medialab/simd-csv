@@ -21,6 +21,8 @@ enum ReadState {
 
 // NOTE: funnily enough, knowing the delimiter is not required to split the records,
 // but since we expose a single unified `struct` here, it is simpler to include it.
+// NOTE: I tried to remove the `record_was_read` and to keep this information
+// as a new `ReadState` variant, but it resulted in slightly worse codegen.
 #[derive(Debug)]
 pub(crate) struct CoreReader {
     pub(crate) delimiter: u8,
