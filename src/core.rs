@@ -479,47 +479,74 @@ impl CoreReader {
                 Unquoted => {
                     // Here we are moving to next delimiter or end of line
 
-                    let mut last_offset: usize = 0;
+                    let mut scan_pos = pos;
+                    let mut mask: u64 = 0;
+                    let mut mask_start = 0;
+                    let mut scalar_tail = false;
 
-                    for offset in self.searcher.search(&input[pos..]) {
-                        last_offset = offset + 1;
+                    loop {
+                        let event_pos;
 
-                        let byte = input[pos + offset];
+                        if mask != 0 {
+                            let offset = mask.trailing_zeros() as usize;
+                            mask &= mask - 1;
+                            event_pos = mask_start + offset;
+                        } else if scalar_tail {
+                            if let Some(offset) = memchr2(self.delimiter, b'\n', &input[scan_pos..])
+                            {
+                                event_pos = scan_pos + offset;
+                                scan_pos = event_pos + 1;
+                            } else {
+                                record_builder.extend_from_slice(&input[pos..]);
+                                pos = input_len;
+                                break;
+                            }
+                        } else {
+                            let block = self.searcher.refill_mask(&input[scan_pos..]);
+                            scan_pos += block.scanned;
+
+                            if block.mask != 0 {
+                                mask = block.mask;
+                                mask_start = scan_pos - block.width;
+                                continue;
+                            }
+
+                            scalar_tail = true;
+                            continue;
+                        }
+
+                        let byte = input[event_pos];
 
                         // NOTE: we don't copy here yet to avoid slowing down
                         // because of multiple tiny copies.
                         if byte == self.delimiter {
-                            record_builder.finalize_field_preemptively(offset);
+                            record_builder.finalize_field_preemptively(event_pos - pos);
 
-                            let next_pos = pos + last_offset;
+                            let next_pos = event_pos + 1;
 
                             if next_pos < input_len && input[next_pos] == self.quote {
                                 self.state = Quoted;
                                 record_builder.bump();
-                                last_offset += 1;
+                                record_builder.extend_from_slice(&input[pos..next_pos + 1]);
+                                pos = next_pos + 1;
                                 break;
                             }
 
                             if next_pos == input_len {
                                 self.state = FieldStart;
+                                record_builder.extend_from_slice(&input[pos..next_pos]);
+                                pos = next_pos;
                                 break;
                             }
 
                             continue;
                         }
 
-                        record_builder.extend_from_slice(&input[pos..pos + offset]);
+                        record_builder.extend_from_slice(&input[pos..event_pos]);
                         record_builder.finalize_record();
                         self.record_was_read = true;
                         self.state = FieldStart;
-                        return (ReadResult::Record, pos + last_offset);
-                    }
-
-                    if last_offset > 0 {
-                        record_builder.extend_from_slice(&input[pos..pos + last_offset]);
-                        pos += last_offset
-                    } else {
-                        break;
+                        return (ReadResult::Record, event_pos + 1);
                     }
                 }
                 Quoted => {
