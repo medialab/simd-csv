@@ -98,58 +98,6 @@ mod x86_64 {
             pub fn iter<'s, 'h>(&'s self, haystack: &'h [u8]) -> AVX2Indices<'s, 'h> {
                 AVX2Indices::new(self, haystack)
             }
-
-            // Keep the AVX2 work out of CoreReader::read_record. In particular,
-            // the overwhelmingly common quoted-field path can then call memchr
-            // without having to clear AVX state first.
-            #[inline(never)]
-            #[target_feature(enable = "avx2")]
-            pub unsafe fn refill_mask(&self, haystack: &[u8]) -> super::super::SearchBlock {
-                let start = haystack.as_ptr();
-                let end = start.add(haystack.len());
-                let mut current = start;
-
-                if haystack.len() >= DOUBLE_CHUNK_SIZE {
-                    let vectorized_end = end.sub(DOUBLE_CHUNK_SIZE);
-
-                    while current <= vectorized_end {
-                        let first_chunk = _mm256_loadu_si256(current as *const __m256i);
-                        let second_chunk =
-                            _mm256_loadu_si256(current.add(CHUNK_SIZE) as *const __m256i);
-
-                        let first_delimiter_cmp =
-                            _mm256_cmpeq_epi8(first_chunk, self.delimiter_splat);
-                        let first_newline_cmp = _mm256_cmpeq_epi8(first_chunk, self.newline_splat);
-                        let first_cmp = _mm256_or_si256(first_delimiter_cmp, first_newline_cmp);
-
-                        let second_delimiter_cmp =
-                            _mm256_cmpeq_epi8(second_chunk, self.delimiter_splat);
-                        let second_newline_cmp =
-                            _mm256_cmpeq_epi8(second_chunk, self.newline_splat);
-                        let second_cmp = _mm256_or_si256(second_delimiter_cmp, second_newline_cmp);
-
-                        let first_mask = _mm256_movemask_epi8(first_cmp) as u32;
-                        let second_mask = _mm256_movemask_epi8(second_cmp) as u32;
-                        let mask = first_mask as u64 | ((second_mask as u64) << 32);
-
-                        current = current.add(DOUBLE_CHUNK_SIZE);
-
-                        if mask != 0 {
-                            return super::super::SearchBlock {
-                                scanned: current.distance(start),
-                                width: DOUBLE_CHUNK_SIZE,
-                                mask,
-                            };
-                        }
-                    }
-                }
-
-                super::super::SearchBlock {
-                    scanned: current.distance(start),
-                    width: 0,
-                    mask: 0,
-                }
-            }
         }
 
         #[derive(Debug)]
@@ -468,15 +416,6 @@ pub struct Searcher {
     inner: memchr::arch::all::memchr::Two,
 }
 
-#[derive(Clone, Copy, Debug)]
-pub(crate) struct SearchBlock {
-    /// Number of bytes inspected from the supplied haystack.
-    pub(crate) scanned: usize,
-    /// Width of the block represented by `mask`.
-    pub(crate) width: usize,
-    pub(crate) mask: u64,
-}
-
 impl Searcher {
     #[inline(always)]
     pub fn new(delimiter: u8, newline: u8) -> Self {
@@ -517,48 +456,6 @@ impl Searcher {
 
             #[cfg(not(any(target_arch = "x86_64", target_arch = "aarch64")))]
             inner: self.inner.iter(haystack),
-        }
-    }
-
-    #[inline(never)]
-    pub(crate) fn refill_mask(&self, haystack: &[u8]) -> SearchBlock {
-        #[cfg(target_arch = "x86_64")]
-        unsafe {
-            return self.inner.refill_mask(haystack);
-        }
-
-        #[cfg(target_arch = "aarch64")]
-        {
-            // The CoreReader optimization is x86-specific for now. Keep the
-            // interface correct on other targets without changing their SIMD
-            // iterator path.
-            if let Some(offset) = self.inner.iter(haystack).next() {
-                return SearchBlock {
-                    scanned: offset + 1,
-                    width: 1,
-                    mask: 1,
-                };
-            }
-        }
-
-        #[cfg(not(any(target_arch = "x86_64", target_arch = "aarch64")))]
-        {
-            if let Some(offset) = self.inner.iter(haystack).next() {
-                return SearchBlock {
-                    scanned: offset + 1,
-                    width: 1,
-                    mask: 1,
-                };
-            }
-        }
-
-        #[cfg(not(target_arch = "x86_64"))]
-        {
-            SearchBlock {
-                scanned: haystack.len(),
-                width: 0,
-                mask: 0,
-            }
         }
     }
 
