@@ -233,7 +233,7 @@ fn main() -> anyhow::Result<()> {
             use csimdv::{default_dialect, Parser};
             use csimdv::aligned_buffer::AlignedBuffer;
             let file = File::open(&args.path)?;
-            let mut p = Parser::new(default_dialect(), AlignedBuffer::new(file));
+            let mut p = Parser::new(default_dialect(), AlignedBuffer::new(&file)?);
             let mut count = 0;
             while let Some(_) = p.read_line() {
                 count += 1;

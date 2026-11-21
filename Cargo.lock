@@ -118,7 +118,13 @@ checksum = "b05b61dc5112cbb17e4b6cd61790d9845d13888356391624cbe7e41efeac1e75"
 [[package]]
 name = "csimdv"
 version = "0.1.0"
-source = "git+https://github.com/juliusgeo/csimdv-rs.git#84f8dc7f5469d304dbd5d80d16d76d46bb61cdc3"
+source = "git+https://github.com/juliusgeo/csimdv-rs.git#a93db9e9229623ac1f2d21c795ab2074249e0957"
+dependencies = [
+ "libc",
+ "memchr",
+ "serde",
+ "serde_json",
+]
 
 [[package]]
 name = "csv"
@@ -223,6 +229,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "a505d71960adde88e293da5cb5eda57093379f64e61cf77bf0e6a63af07a7bac"
 dependencies = [
  "serde_core",
+ "serde_derive",
 ]
 
 [[package]]
