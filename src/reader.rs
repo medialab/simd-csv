@@ -4,7 +4,11 @@ use crate::buffer::BufReaderWithPosition;
 use crate::core::{CoreReader, ReadResult};
 use crate::error::{self, Error, ErrorKind};
 use crate::records::{ByteRecord, ByteRecordBuilder};
+use crate::select::{Selection, Selector};
 use crate::utils::{self, trim_bom};
+
+#[cfg(feature = "str")]
+use crate::records::StringRecord;
 
 /// Builds a [`Reader`] with given configuration.
 pub struct ReaderBuilder {
@@ -250,6 +254,20 @@ impl<R: Read> Reader<R> {
         Ok(&self.headers)
     }
 
+    /// Attempt to select the desired columns.
+    pub fn select(&mut self, selector: &Selector) -> error::Result<Selection> {
+        let has_headers = self.has_headers;
+        let headers = self.byte_headers()?;
+        selector.select(headers, has_headers)
+    }
+
+    /// Attempt to select the desired column.
+    pub fn select_one(&mut self, selector: &Selector) -> error::Result<usize> {
+        let has_headers = self.has_headers;
+        let headers = self.byte_headers()?;
+        selector.select_one(headers, has_headers)
+    }
+
     /// Attempt to read the next CSV record into a pre-allocated [`ByteRecord`].
     ///
     /// Returns a boolean indicating whether a record was actually read or if we
@@ -265,6 +283,19 @@ impl<R: Read> Reader<R> {
         }
 
         self.read_byte_record_impl(record)
+    }
+
+    #[cfg(feature = "str")]
+    pub fn read_record(&mut self, record: &mut StringRecord) -> error::Result<bool> {
+        if self.read_byte_record(record.as_inner_mut())? {
+            if !record.validate_utf8() {
+                Err(Error::new(ErrorKind::Utf8Error))
+            } else {
+                Ok(true)
+            }
+        } else {
+            Ok(false)
+        }
     }
 
     /// Return an iterator yielding [`ByteRecord`] structs.
@@ -283,6 +314,24 @@ impl<R: Read> Reader<R> {
         }
     }
 
+    /// Return an iterator yielding [`StringRecord`] structs.
+    #[cfg(feature = "str")]
+    pub fn records(&mut self) -> StringRecordsIter<'_, R> {
+        StringRecordsIter {
+            reader: self,
+            record: StringRecord::new(),
+        }
+    }
+
+    /// Transform the reader into an iterator yielding [`StringRecord`] structs.
+    #[cfg(feature = "str")]
+    pub fn into_records(self) -> StringRecordsIntoIter<R> {
+        StringRecordsIntoIter {
+            reader: self,
+            record: StringRecord::new(),
+        }
+    }
+
     /// Get an immutable reference to the underlying reader.
     pub fn get_ref(&self) -> &R {
         self.buffer.get_ref()
@@ -298,17 +347,6 @@ impl<R: Read> Reader<R> {
     /// **BEWARE**: any already buffered data will be lost!
     pub fn into_inner(self) -> R {
         self.buffer.into_inner().into_inner()
-    }
-
-    /// Unwrap into an optional first record (only when the reader was
-    /// configured not to interpret the first record as a header, and when the
-    /// first record was pre-buffered but not yet reemitted), and the underlying
-    /// [`BufReader`].
-    pub fn into_bufreader(self) -> (Option<ByteRecord>, BufReader<R>) {
-        (
-            self.must_reemit_headers.then_some(self.headers),
-            self.buffer.into_inner(),
-        )
     }
 
     /// Returns the current byte offset of the reader in the wrapped stream.
@@ -355,6 +393,50 @@ impl<R: Read> Iterator for ByteRecordsIntoIter<R> {
         // NOTE: cloning the record will not carry over excess capacity
         // because the record only contains `Vec` currently.
         match self.reader.read_byte_record(&mut self.record) {
+            Err(err) => Some(Err(err)),
+            Ok(true) => Some(Ok(self.record.clone())),
+            Ok(false) => None,
+        }
+    }
+}
+
+#[cfg(feature = "str")]
+pub struct StringRecordsIter<'r, R> {
+    reader: &'r mut Reader<R>,
+    record: StringRecord,
+}
+
+#[cfg(feature = "str")]
+impl<R: Read> Iterator for StringRecordsIter<'_, R> {
+    type Item = error::Result<StringRecord>;
+
+    #[inline]
+    fn next(&mut self) -> Option<Self::Item> {
+        // NOTE: cloning the record will not carry over excess capacity
+        // because the record only contains `Vec` currently.
+        match self.reader.read_record(&mut self.record) {
+            Err(err) => Some(Err(err)),
+            Ok(true) => Some(Ok(self.record.clone())),
+            Ok(false) => None,
+        }
+    }
+}
+
+#[cfg(feature = "str")]
+pub struct StringRecordsIntoIter<R> {
+    reader: Reader<R>,
+    record: StringRecord,
+}
+
+#[cfg(feature = "str")]
+impl<R: Read> Iterator for StringRecordsIntoIter<R> {
+    type Item = error::Result<StringRecord>;
+
+    #[inline]
+    fn next(&mut self) -> Option<Self::Item> {
+        // NOTE: cloning the record will not carry over excess capacity
+        // because the record only contains `Vec` currently.
+        match self.reader.read_record(&mut self.record) {
             Err(err) => Some(Err(err)),
             Ok(true) => Some(Ok(self.record.clone())),
             Ok(false) => None,
@@ -533,6 +615,29 @@ mod tests {
                 reader.byte_records().collect::<Result<Vec<_>, _>>()?,
                 expected,
             );
+        }
+
+        Ok(())
+    }
+
+    #[test]
+    #[cfg(feature = "str")]
+    fn test_read_record() -> error::Result<()> {
+        let csv =
+            "french,chinese\nReine-Mère de l'Ouest,西王母\nEmpereur du Pic de l'Est,东华帝君\r\n";
+
+        let expected = vec![
+            srec!["french", "chinese"],
+            srec!["Reine-Mère de l'Ouest", "西王母"],
+            srec!["Empereur du Pic de l'Est", "东华帝君"],
+        ];
+
+        for capacity in [32usize, 4, 3, 2, 1] {
+            let mut reader = ReaderBuilder::with_capacity(capacity)
+                .has_headers(false)
+                .from_reader(Cursor::new(csv));
+
+            assert_eq!(reader.records().collect::<Result<Vec<_>, _>>()?, expected,);
         }
 
         Ok(())
@@ -748,13 +853,94 @@ mod tests {
         Ok(())
     }
 
+    #[test]
+    fn test_reverse_reader_crlf() -> error::Result<()> {
+        let data = b"name,surname\r\njohn,landis\r\nbeatrice,babka\r\nevan,michalak";
+        let mut reader = ReverseReader::from_reader(Cursor::new(data))?;
+
+        assert_eq!(
+            reader.byte_records().collect::<Result<Vec<_>, _>>()?,
+            vec![
+                brec!["evan", "michalak"],
+                brec!["beatrice", "babka"],
+                brec!["john", "landis"]
+            ]
+        );
+
+        assert_eq!(reader.byte_headers(), &brec!["name", "surname"]);
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_weird_sequence() -> error::Result<()> {
+        let data = b"\r\r`\"\",\n,`\"\r\",\n";
+        let mut record = ByteRecord::new();
+        let mut reader = ReaderBuilder::new()
+            .flexible(true)
+            .has_headers(false)
+            .from_reader(&data[..]);
+
+        reader.read_byte_record(&mut record)?;
+        assert_eq!(record, brec!["`\"", ""]);
+
+        reader.read_byte_record(&mut record)?;
+
+        assert_eq!(record, brec!["", "\"\r", ""]);
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_quoted_final_cr() -> error::Result<()> {
+        let csv = b"name,surname\n\"test\",\"\r\"\njohn,landis";
+
+        let expected = vec![
+            brec!["name", "surname"],
+            brec!["test", "\r"],
+            brec!["john", "landis"],
+        ];
+
+        for capacity in [32usize, 4, 3, 2, 1] {
+            let mut reader = ReaderBuilder::with_capacity(capacity)
+                .has_headers(false)
+                .from_reader(Cursor::new(csv));
+
+            assert_eq!(
+                reader.byte_records().collect::<Result<Vec<_>, _>>()?,
+                expected,
+            );
+        }
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_quoted_field_ending_crlf() -> error::Result<()> {
+        // Spurious char
+        let reader = Reader::from_reader_no_headers(Cursor::new(b"\"john\"\rX\nnext\n"));
+
+        let records = reader.into_byte_records().collect::<Result<Vec<_>, _>>()?;
+
+        assert_eq!(records, vec![brec!["john\rX"], brec!["next"]]);
+
+        // Proper alignment
+        let reader = Reader::from_reader_no_headers(Cursor::new(b"\"john\"\r\nnext\n"));
+
+        let records = reader.into_byte_records().collect::<Result<Vec<_>, _>>()?;
+
+        assert_eq!(records, vec![brec!["john"], brec!["next"]]);
+
+        Ok(())
+    }
+
     // #[test]
     // fn test_fuzzing_failures() -> error::Result<()> {
-    //     let data = [113u8, 10, 11, 44];
+    //     let data = [13u8, 13, 96, 34, 34, 44, 10, 44, 96, 34, 13, 34, 44, 10];
     //     let mut record = ByteRecord::new();
-    //     let mut reader = Reader::from_reader(&data[..]);
+    //     let mut reader = ReaderBuilder::new().flexible(true).from_reader(&data[..]);
 
-    //     dbg!(reader.read_byte_record(&mut record)?);
+    //     dbg!(reader.read_byte_record(&mut record)?, record);
 
     //     Ok(())
     // }

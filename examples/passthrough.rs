@@ -11,6 +11,10 @@ struct Args {
     #[arg(long)]
     simd: bool,
 
+    /// Whether to write output as binary
+    #[arg(long)]
+    binary: bool,
+
     #[arg(long)]
     only_read: bool,
 }
@@ -34,6 +38,7 @@ fn main() -> anyhow::Result<()> {
 
     if args.simd {
         let mut reader = simd_csv::ReaderBuilder::with_capacity(DEFAULT_CAPACITY)
+            .has_headers(false)
             .delimiter(delimiter)
             .from_reader(file);
 
@@ -50,6 +55,31 @@ fn main() -> anyhow::Result<()> {
         }
 
         writer.flush()?;
+    } else if args.binary {
+        #[cfg(feature = "binary")]
+        {
+            let mut reader = simd_csv::ReaderBuilder::with_capacity(DEFAULT_CAPACITY)
+                .has_headers(false)
+                .delimiter(delimiter)
+                .from_reader(file);
+
+            let mut record = simd_csv::ByteRecord::new();
+
+            let mut writer = simd_csv::binary::BinaryWriter::from_writer(std::io::stdout());
+
+            while reader.read_byte_record(&mut record)? {
+                if !args.only_read {
+                    writer.write_byte_record(&record)?;
+                }
+            }
+
+            writer.flush()?;
+        }
+
+        #[cfg(not(feature = "binary"))]
+        {
+            eprintln!("was not compiled with binary feature");
+        }
     } else {
         let mut reader = csv::ReaderBuilder::new()
             .has_headers(false)

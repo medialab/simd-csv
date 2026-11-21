@@ -90,9 +90,10 @@ checksum = "0fda2ff0d084019ba4d7c6f371c95d8fd75ce3524c3cb8fb653a3023f6323e64"
 
 [[package]]
 name = "simd-csv"
-version = "0.10.0"
+version = "0.11.1"
 dependencies = [
  "memchr",
+ "simdutf8",
 ]
 
 [[package]]
@@ -102,6 +103,12 @@ dependencies = [
  "libfuzzer-sys",
  "simd-csv",
 ]
+
+[[package]]
+name = "simdutf8"
+version = "0.1.5"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "e3a9fe34e3e7a50316060351f37187a3f546bce95496156754b601a5fa71b76e"
 
 [[package]]
 name = "wasip2"

@@ -7,5 +7,11 @@ use simd_csv::Splitter;
 fuzz_target!(|data: &[u8]| {
     let mut reader = Splitter::from_reader(data);
 
-    while let Some(_) = reader.split_record().unwrap() {}
+    loop {
+        if let Some(record) = reader.split_record().unwrap() {
+            for _ in record.iter() {}
+        } else {
+            break;
+        }
+    }
 });

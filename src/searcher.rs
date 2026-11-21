@@ -28,6 +28,42 @@ mod x86_64 {
         mask & (mask - 1)
     }
 
+    // pub struct MaskIter(u32);
+
+    // impl Iterator for MaskIter {
+    //     type Item = usize;
+
+    //     #[inline(always)]
+    //     fn next(&mut self) -> Option<Self::Item> {
+    //         if self.0 == 0 {
+    //             None
+    //         } else {
+    //             let offset = first_offset(self.0);
+    //             self.0 = clear_least_significant_bit(self.0);
+    //             Some(offset)
+    //         }
+    //     }
+    // }
+
+    // #[derive(Clone, Copy, Debug)]
+    // pub struct Mask(u32);
+
+    // impl Mask {
+    //     #[inline(always)]
+    //     pub fn into_first_offset(self) -> Option<usize> {
+    //         if self.0 != 0 {
+    //             Some(first_offset(self.0))
+    //         } else {
+    //             None
+    //         }
+    //     }
+
+    //     #[inline(always)]
+    //     pub fn into_iter(self) -> MaskIter {
+    //         MaskIter(self.0)
+    //     }
+    // }
+
     pub mod sse2 {
         use super::*;
 
@@ -36,26 +72,29 @@ mod x86_64 {
             _mm_set1_epi8,
         };
 
+        const CHUNK_SIZE: usize = 16;
+        // const FULL_MASK: u32 = (1 << CHUNK_SIZE) - 1;
+
         #[derive(Debug)]
         pub struct SSE2Searcher {
-            n1: u8,
-            n2: u8,
-            n3: u8,
-            v1: __m128i,
-            v2: __m128i,
-            v3: __m128i,
+            delimiter: u8,
+            newline: u8,
+            quote: u8,
+            delimiter_splat: __m128i,
+            newline_splat: __m128i,
+            quote_splat: __m128i,
         }
 
         impl SSE2Searcher {
             #[inline]
-            pub unsafe fn new(n1: u8, n2: u8, n3: u8) -> Self {
+            pub unsafe fn new(delimiter: u8, newline: u8, quote: u8) -> Self {
                 Self {
-                    n1,
-                    n2,
-                    n3,
-                    v1: _mm_set1_epi8(n1 as i8),
-                    v2: _mm_set1_epi8(n2 as i8),
-                    v3: _mm_set1_epi8(n3 as i8),
+                    delimiter,
+                    newline,
+                    quote,
+                    delimiter_splat: _mm_set1_epi8(delimiter as i8),
+                    newline_splat: _mm_set1_epi8(newline as i8),
+                    quote_splat: _mm_set1_epi8(quote as i8),
                 }
             }
 
@@ -63,6 +102,43 @@ mod x86_64 {
             pub fn iter<'s, 'h>(&'s self, haystack: &'h [u8]) -> SSE2Indices<'s, 'h> {
                 SSE2Indices::new(self, haystack)
             }
+
+            // #[inline(always)]
+            // unsafe fn process_loaded_chunk(&self, chunk: __m128i, valid_mask: u32) -> (Mask, Mask) {
+            //     let delimiter_cmp = _mm_cmpeq_epi8(chunk, self.delimiter_splat);
+            //     let newline_cmp = _mm_cmpeq_epi8(chunk, self.newline_splat);
+            //     let quote_cmp = _mm_cmpeq_epi8(chunk, self.quote_splat);
+
+            //     let structural_cmp = _mm_or_si128(newline_cmp, quote_cmp);
+
+            //     // Ignore invalid lanes before looking for the first structural byte.
+            //     let structural_mask = (_mm_movemask_epi8(structural_cmp) as u32) & valid_mask;
+            //     let mut delimiter_mask = (_mm_movemask_epi8(delimiter_cmp) as u32) & valid_mask;
+
+            //     delimiter_mask &= (1u32 << ((structural_mask | 0x1_0000).trailing_zeros())) - 1;
+
+            //     (Mask(delimiter_mask), Mask(structural_mask))
+            // }
+
+            // #[inline]
+            // pub unsafe fn process_chunk(&self, haystack: &[u8]) -> (usize, (Mask, Mask)) {
+            //     if haystack.len() >= CHUNK_SIZE {
+            //         let chunk = _mm_loadu_si128(haystack.as_ptr() as *const __m128i);
+            //         return (CHUNK_SIZE, self.process_loaded_chunk(chunk, FULL_MASK));
+            //     }
+
+            //     let mut tail = [0u8; CHUNK_SIZE];
+            //     tail[..haystack.len()].copy_from_slice(haystack);
+
+            //     let chunk = _mm_loadu_si128(tail.as_ptr() as *const __m128i);
+
+            //     let valid_mask = match haystack.len() {
+            //         0 => 0,
+            //         n => (1u32 << n) - 1,
+            //     };
+
+            //     (haystack.len(), self.process_loaded_chunk(chunk, valid_mask))
+            // }
         }
 
         #[derive(Debug)]
@@ -91,8 +167,6 @@ mod x86_64 {
             }
         }
 
-        const SSE2_STEP: usize = 16;
-
         impl SSE2Indices<'_, '_> {
             pub unsafe fn next(&mut self) -> Option<usize> {
                 if self.start >= self.end {
@@ -104,14 +178,14 @@ mod x86_64 {
                 let mut current = self.current;
                 let start = self.start;
                 let len = self.end.distance(start);
-                let v1 = self.searcher.v1;
-                let v2 = self.searcher.v2;
-                let v3 = self.searcher.v3;
+                let delimiter_splat = self.searcher.delimiter_splat;
+                let newline_splat = self.searcher.newline_splat;
+                let quote_splat = self.searcher.quote_splat;
 
                 'main: loop {
                     // Processing current move mask
                     if mask != 0 {
-                        let offset = current.sub(SSE2_STEP).add(first_offset(mask));
+                        let offset = current.sub(CHUNK_SIZE).add(first_offset(mask));
                         self.mask = clear_least_significant_bit(mask);
                         self.current = current;
 
@@ -119,20 +193,20 @@ mod x86_64 {
                     }
 
                     // Main loop of unaligned loads
-                    if len >= SSE2_STEP {
-                        let vectorized_end = self.end.sub(SSE2_STEP);
+                    if len >= CHUNK_SIZE {
+                        let vectorized_end = self.end.sub(CHUNK_SIZE);
 
                         while current <= vectorized_end {
                             let chunk = _mm_loadu_si128(current as *const __m128i);
-                            let cmp1 = _mm_cmpeq_epi8(chunk, v1);
-                            let cmp2 = _mm_cmpeq_epi8(chunk, v2);
-                            let cmp3 = _mm_cmpeq_epi8(chunk, v3);
+                            let cmp1 = _mm_cmpeq_epi8(chunk, delimiter_splat);
+                            let cmp2 = _mm_cmpeq_epi8(chunk, newline_splat);
+                            let cmp3 = _mm_cmpeq_epi8(chunk, quote_splat);
                             let cmp = _mm_or_si128(cmp1, cmp2);
                             let cmp = _mm_or_si128(cmp, cmp3);
 
                             mask = _mm_movemask_epi8(cmp) as u32;
 
-                            current = current.add(SSE2_STEP);
+                            current = current.add(CHUNK_SIZE);
 
                             if mask != 0 {
                                 continue 'main;
@@ -142,9 +216,9 @@ mod x86_64 {
 
                     // Processing remaining bytes linearly
                     while current < self.end {
-                        if *current == self.searcher.n1
-                            || *current == self.searcher.n2
-                            || *current == self.searcher.n3
+                        if *current == self.searcher.delimiter
+                            || *current == self.searcher.newline
+                            || *current == self.searcher.quote
                         {
                             let offset = current.distance(start);
                             self.current = current.add(1);
@@ -170,6 +244,8 @@ mod aarch64 {
 
     use crate::ext::Pointer;
 
+    const CHUNK_SIZE: usize = 16;
+
     #[inline(always)]
     unsafe fn neon_movemask(v: uint8x16_t) -> u64 {
         let asu16s = vreinterpretq_u16_u8(v);
@@ -192,24 +268,24 @@ mod aarch64 {
 
     #[derive(Debug)]
     pub struct NeonSearcher {
-        n1: u8,
-        n2: u8,
-        n3: u8,
-        v1: uint8x16_t,
-        v2: uint8x16_t,
-        v3: uint8x16_t,
+        delimiter: u8,
+        newline: u8,
+        quote: u8,
+        delimiter_splat: uint8x16_t,
+        newline_splat: uint8x16_t,
+        quote_splat: uint8x16_t,
     }
 
     impl NeonSearcher {
         #[inline]
-        pub unsafe fn new(n1: u8, n2: u8, n3: u8) -> Self {
+        pub unsafe fn new(delimiter: u8, newline: u8, quote: u8) -> Self {
             Self {
-                n1,
-                n2,
-                n3,
-                v1: vdupq_n_u8(n1),
-                v2: vdupq_n_u8(n2),
-                v3: vdupq_n_u8(n3),
+                delimiter,
+                newline,
+                quote,
+                delimiter_splat: vdupq_n_u8(delimiter),
+                newline_splat: vdupq_n_u8(newline),
+                quote_splat: vdupq_n_u8(quote),
             }
         }
 
@@ -245,9 +321,23 @@ mod aarch64 {
         }
     }
 
-    const NEON_STEP: usize = 16;
-
     impl NeonIndices<'_, '_> {
+        #[inline]
+        pub unsafe fn _next_in_current_mask(&mut self) -> Option<usize> {
+            let mask = self.mask;
+            let current = self.current;
+
+            if mask != 0 {
+                let offset = current.sub(CHUNK_SIZE).add(first_offset(mask));
+                self.mask = clear_least_significant_bit(mask);
+                self.current = current;
+
+                Some(offset.distance(self.start))
+            } else {
+                None
+            }
+        }
+
         pub unsafe fn next(&mut self) -> Option<usize> {
             if self.start >= self.end {
                 return None;
@@ -257,14 +347,14 @@ mod aarch64 {
             let mut current = self.current;
             let start = self.start;
             let len = self.end.distance(start);
-            let v1 = self.searcher.v1;
-            let v2 = self.searcher.v2;
-            let v3 = self.searcher.v3;
+            let delimiter_splat = self.searcher.delimiter_splat;
+            let newline_splat = self.searcher.newline_splat;
+            let quote_splat = self.searcher.quote_splat;
 
             'main: loop {
                 // Processing current move mask
                 if mask != 0 {
-                    let offset = current.sub(NEON_STEP).add(first_offset(mask));
+                    let offset = current.sub(CHUNK_SIZE).add(first_offset(mask));
                     self.mask = clear_least_significant_bit(mask);
                     self.current = current;
 
@@ -272,20 +362,20 @@ mod aarch64 {
                 }
 
                 // Main loop of unaligned loads
-                if len >= NEON_STEP {
-                    let vectorized_end = self.end.sub(NEON_STEP);
+                if len >= CHUNK_SIZE {
+                    let vectorized_end = self.end.sub(CHUNK_SIZE);
 
                     while current <= vectorized_end {
                         let chunk = vld1q_u8(current);
-                        let cmp1 = vceqq_u8(chunk, v1);
-                        let cmp2 = vceqq_u8(chunk, v2);
-                        let cmp3 = vceqq_u8(chunk, v3);
+                        let cmp1 = vceqq_u8(chunk, delimiter_splat);
+                        let cmp2 = vceqq_u8(chunk, newline_splat);
+                        let cmp3 = vceqq_u8(chunk, quote_splat);
                         let cmp = vorrq_u8(cmp1, cmp2);
                         let cmp = vorrq_u8(cmp, cmp3);
 
                         mask = neon_movemask(cmp);
 
-                        current = current.add(NEON_STEP);
+                        current = current.add(CHUNK_SIZE);
 
                         if mask != 0 {
                             continue 'main;
@@ -295,9 +385,9 @@ mod aarch64 {
 
                 // Processing remaining bytes linearly
                 while current < self.end {
-                    if *current == self.searcher.n1
-                        || *current == self.searcher.n2
-                        || *current == self.searcher.n3
+                    if *current == self.searcher.delimiter
+                        || *current == self.searcher.newline
+                        || *current == self.searcher.quote
                     {
                         let offset = current.distance(start);
                         self.current = current.add(1);
@@ -334,6 +424,9 @@ pub fn searcher_simd_instructions() -> &'static str {
     }
 }
 
+// #[cfg(target_arch = "x86_64")]
+// pub use x86_64::Mask;
+
 #[derive(Debug)]
 pub struct Searcher {
     #[cfg(target_arch = "x86_64")]
@@ -348,12 +441,12 @@ pub struct Searcher {
 
 impl Searcher {
     #[inline(always)]
-    pub fn new(n1: u8, n2: u8, n3: u8) -> Self {
+    pub fn new(delimiter: u8, newline: u8, quote: u8) -> Self {
         #[cfg(target_arch = "x86_64")]
         {
             unsafe {
                 Self {
-                    inner: x86_64::sse2::SSE2Searcher::new(n1, n2, n3),
+                    inner: x86_64::sse2::SSE2Searcher::new(delimiter, newline, quote),
                 }
             }
         }
@@ -362,7 +455,7 @@ impl Searcher {
         {
             unsafe {
                 Self {
-                    inner: aarch64::NeonSearcher::new(n1, n2, n3),
+                    inner: aarch64::NeonSearcher::new(delimiter, newline, quote),
                 }
             }
         }
@@ -370,34 +463,35 @@ impl Searcher {
         #[cfg(not(any(target_arch = "x86_64", target_arch = "aarch64")))]
         {
             Self {
-                inner: memchr::arch::all::memchr::Three::new(n1, n2, n3),
+                inner: memchr::arch::all::memchr::Three::new(delimiter, newline, quote),
             }
         }
     }
 
     #[inline(always)]
     pub fn search<'s, 'h>(&'s self, haystack: &'h [u8]) -> Indices<'s, 'h> {
-        #[cfg(target_arch = "x86_64")]
-        {
-            Indices {
-                inner: self.inner.iter(haystack),
-            }
-        }
-
-        #[cfg(target_arch = "aarch64")]
-        {
-            Indices {
-                inner: self.inner.iter(haystack),
-            }
-        }
-
-        #[cfg(not(any(target_arch = "x86_64", target_arch = "aarch64")))]
-        {
-            Indices {
-                inner: self.inner.iter(haystack),
-            }
+        Indices {
+            inner: self.inner.iter(haystack),
         }
     }
+
+    // #[inline(always)]
+    // pub fn process_chunk(&self, haystack: &[u8]) -> (usize, (Mask, Mask)) {
+    //     #[cfg(target_arch = "x86_64")]
+    //     unsafe {
+    //         self.inner.process_chunk(haystack)
+    //     }
+
+    //     #[cfg(target_arch = "aarch64")]
+    //     {
+    //         unimplemented!()
+    //     }
+
+    //     #[cfg(not(any(target_arch = "x86_64", target_arch = "aarch64")))]
+    //     {
+    //         unimplemented!()
+    //     }
+    // }
 }
 
 #[derive(Debug)]
@@ -514,4 +608,88 @@ mod tests {
                 .collect::<Vec<_>>()
         );
     }
+
+    // #[test]
+    // #[cfg(target_arch = "x86_64")]
+    // fn test_process_chunk() {
+    //     let searcher = Searcher::new(b',', b'\n', b'"');
+
+    //     // Only delimiters
+    //     let buffer: &[u8; 16] = b"name,surname,las";
+
+    //     let (read, (delimiter_mask, structural_mask)) = searcher.process_chunk(buffer);
+
+    //     assert_eq!(read, 16);
+    //     assert_eq!(structural_mask.into_first_offset(), None);
+    //     assert_eq!(delimiter_mask.into_iter().collect::<Vec<_>>(), vec![4, 12]);
+
+    //     // Newline
+    //     let buffer: &[u8; 16] = b"name,sur\nname,la";
+
+    //     let (read, (delimiter_mask, structural_mask)) = searcher.process_chunk(buffer);
+
+    //     assert_eq!(read, 16);
+    //     assert_eq!(structural_mask.into_first_offset(), Some(8));
+    //     assert_eq!(delimiter_mask.into_iter().collect::<Vec<_>>(), vec![4]);
+
+    //     // Quote
+    //     let buffer: &[u8; 16] = b"name,sur\"name,la";
+
+    //     let (read, (delimiter_mask, structural_mask)) = searcher.process_chunk(buffer);
+
+    //     assert_eq!(read, 16);
+    //     assert_eq!(structural_mask.into_first_offset(), Some(8));
+    //     assert_eq!(delimiter_mask.into_iter().collect::<Vec<_>>(), vec![4]);
+
+    //     // Comma in first position
+    //     let buffer: &[u8; 16] = b",name,sur\"name,l";
+
+    //     let (read, (delimiter_mask, structural_mask)) = searcher.process_chunk(buffer);
+
+    //     assert_eq!(read, 16);
+    //     assert_eq!(structural_mask.into_first_offset(), Some(9));
+    //     assert_eq!(delimiter_mask.into_iter().collect::<Vec<_>>(), vec![0, 5]);
+
+    //     // All commas neutralized
+    //     let buffer: &[u8; 16] = b"\",ame,sur\"name,l";
+
+    //     let (read, (delimiter_mask, structural_mask)) = searcher.process_chunk(buffer);
+
+    //     assert_eq!(read, 16);
+    //     assert_eq!(structural_mask.into_first_offset(), Some(0));
+    //     assert_eq!(
+    //         delimiter_mask.into_iter().collect::<Vec<usize>>(),
+    //         Vec::<usize>::new()
+    //     );
+
+    //     // Longer buffers
+    //     let buffer = b"name,surname,lasbuthasotherstuffi,nthetailofthebuffer,";
+
+    //     let (read, (delimiter_mask, structural_mask)) = searcher.process_chunk(buffer);
+
+    //     assert_eq!(read, 16);
+    //     assert_eq!(structural_mask.into_first_offset(), None);
+    //     assert_eq!(delimiter_mask.into_iter().collect::<Vec<_>>(), vec![4, 12]);
+
+    //     // Empty buffer
+    //     let buffer = b"";
+
+    //     let (read, (delimiter_mask, structural_mask)) = searcher.process_chunk(buffer);
+
+    //     assert_eq!(read, 0);
+    //     assert_eq!(structural_mask.into_first_offset(), None);
+    //     assert_eq!(
+    //         delimiter_mask.into_iter().collect::<Vec<_>>(),
+    //         Vec::<usize>::new()
+    //     );
+
+    //     // Tail buffer
+    //     let buffer = b"a,b,\nc,";
+
+    //     let (read, (delimiter_mask, structural_mask)) = searcher.process_chunk(buffer);
+
+    //     assert_eq!(read, 7);
+    //     assert_eq!(structural_mask.into_first_offset(), Some(4));
+    //     assert_eq!(delimiter_mask.into_iter().collect::<Vec<_>>(), vec![1, 3]);
+    // }
 }

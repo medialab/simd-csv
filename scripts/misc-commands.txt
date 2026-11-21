@@ -1,0 +1,5 @@
+# Running miri tests
+cargo +nightly miri test
+
+# Fuzzing
+cargo +nightly fuzz run <name>

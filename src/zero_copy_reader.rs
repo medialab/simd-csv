@@ -1,9 +1,9 @@
-use std::io::{BufReader, Read};
+use std::io::Read;
 
 use crate::buffer::ScratchBuffer;
 use crate::core::{CoreReader, ReadResult};
 use crate::error::{self, Error, ErrorKind};
-use crate::reader::{ReaderBuilder};
+use crate::reader::ReaderBuilder;
 use crate::records::{ByteRecord, ZeroCopyByteRecord};
 use crate::splitter::SplitterBuilder;
 use crate::utils::trim_bom;
@@ -252,11 +252,9 @@ impl<R: Read> ZeroCopyReader<R> {
                     self.index += 1;
                     self.check_field_count(byte, self.seps.len() + 1)?;
 
-                    let record = ZeroCopyByteRecord::new(
-                        self.buffer.flush(pos),
-                        &self.seps,
-                        self.inner.quote,
-                    );
+                    let bytes = self.buffer.flush(pos);
+
+                    let record = ZeroCopyByteRecord::new(bytes, &self.seps, self.inner.quote);
 
                     return Ok(Some(record));
                 }
@@ -278,17 +276,6 @@ impl<R: Read> ZeroCopyReader<R> {
         }
 
         self.read_byte_record_impl()
-    }
-
-    /// Unwrap into an optional first record (only when the reader was
-    /// configured not to interpret the first record as a header, and when the
-    /// first record was pre-buffered but not yet reemitted), and the underlying
-    /// [`BufReader`].
-    pub fn into_bufreader(self) -> (Option<ByteRecord>, BufReader<R>) {
-        (
-            self.must_reemit_headers.then_some(self.byte_headers),
-            self.buffer.into_bufreader(),
-        )
     }
 
     /// Returns the current byte offset of the reader in the wrapped stream.

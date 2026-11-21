@@ -6,13 +6,18 @@ use memmap2::Mmap;
 #[derive(Debug, ValueEnum, Clone)]
 enum CountingMode {
     Baseline,
+    StringBaseline,
     Simd,
     Split,
     Mmap,
     ZeroCopy,
     Copy,
+    #[cfg(feature = "str")]
+    StringCopy,
     MmapCopy,
     Lines,
+    #[cfg(feature = "binary")]
+    Binary,
     CSimdV
 }
 
@@ -42,6 +47,7 @@ impl Args {
     fn simd_splitter(&self) -> csv::Result<simd_csv::Splitter<File>> {
         Ok(
             simd_csv::SplitterBuilder::with_capacity(BUFFERED_READER_DEFAULT_CAPACITY)
+                .has_headers(false)
                 .delimiter(self.delimiter())
                 .from_reader(File::open(&self.path)?),
         )
@@ -50,6 +56,7 @@ impl Args {
     fn simd_zero_copy_reader(&self) -> csv::Result<simd_csv::ZeroCopyReader<File>> {
         Ok(
             simd_csv::ZeroCopyReaderBuilder::with_capacity(BUFFERED_READER_DEFAULT_CAPACITY)
+                .has_headers(false)
                 .delimiter(self.delimiter())
                 .from_reader(File::open(&self.path)?),
         )
@@ -58,6 +65,7 @@ impl Args {
     fn simd_buffered_reader(&self) -> csv::Result<simd_csv::Reader<File>> {
         Ok(
             simd_csv::ReaderBuilder::with_capacity(BUFFERED_READER_DEFAULT_CAPACITY)
+                .has_headers(false)
                 .delimiter(self.delimiter())
                 .from_reader(File::open(&self.path)?),
         )
@@ -86,6 +94,22 @@ fn main() -> anyhow::Result<()> {
 
             println!("{}", count);
         }
+        CountingMode::StringBaseline => {
+            let mut reader_builder = csv::ReaderBuilder::new();
+            reader_builder
+                .has_headers(false)
+                .delimiter(args.delimiter());
+            let mut reader = reader_builder.from_path(&args.path)?;
+
+            let mut count: u64 = 0;
+            let mut record = csv::StringRecord::new();
+
+            while reader.read_record(&mut record)? {
+                count += 1;
+            }
+
+            println!("{}", count);
+        }
         CountingMode::Simd => {
             let mut splitter = args.simd_splitter()?;
 
@@ -108,6 +132,7 @@ fn main() -> anyhow::Result<()> {
             let map = unsafe { Mmap::map(&file).unwrap() };
 
             let mut reader = simd_csv::TotalReaderBuilder::new()
+                .has_headers(false)
                 .delimiter(args.delimiter())
                 .from_bytes(&map);
 
@@ -151,12 +176,26 @@ fn main() -> anyhow::Result<()> {
 
             println!("{}", count);
         }
+        #[cfg(feature = "str")]
+        CountingMode::StringCopy => {
+            let mut reader = args.simd_buffered_reader()?;
+            let mut record = simd_csv::StringRecord::new();
+
+            let mut count: u64 = 0;
+
+            while reader.read_record(&mut record)? {
+                count += 1;
+            }
+
+            println!("{}", count);
+        }
         CountingMode::MmapCopy => {
             let file = File::open(&args.path)?;
 
             let map = unsafe { Mmap::map(&file).unwrap() };
 
             let mut reader = simd_csv::TotalReaderBuilder::new()
+                .has_headers(false)
                 .delimiter(args.delimiter())
                 .from_bytes(&map);
             let mut record = simd_csv::ByteRecord::new();
@@ -175,6 +214,20 @@ fn main() -> anyhow::Result<()> {
             let mut reader = simd_csv::LineReader::from_reader(file);
 
             println!("{}", reader.count_lines()?);
+        }
+        #[cfg(feature = "binary")]
+        CountingMode::Binary => {
+            let file = File::open(&args.path)?;
+
+            let mut reader = simd_csv::binary::BinaryReader::from_reader(file);
+            let mut record = simd_csv::ByteRecord::new();
+            let mut count: u64 = 0;
+
+            while reader.read_byte_record(&mut record)? {
+                count += 1;
+            }
+
+            println!("{}", count);
         }
         CountingMode::CSimdV => {
             use csimdv::{default_dialect, Parser};

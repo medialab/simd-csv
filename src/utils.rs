@@ -1,5 +1,5 @@
 use std::borrow::Cow;
-use std::io::{self, Read, Seek, SeekFrom};
+use std::io::{self, Read, Seek, SeekFrom, Write};
 
 use memchr::memchr;
 
@@ -42,7 +42,7 @@ pub fn unquoted(cell: &[u8], quote: u8) -> Option<&[u8]> {
 /// [`Cow::Owned`] if something was actually unescaped.
 ///
 /// This function will therefore not allocate if this is not actually required.
-pub fn unescape(cell: &[u8], quote: u8) -> Cow<[u8]> {
+pub fn unescape(cell: &[u8], quote: u8) -> Cow<'_, [u8]> {
     let len = cell.len();
     let mut output = Vec::new();
 
@@ -150,9 +150,92 @@ impl<R: Seek + Read> Read for ReverseReader<R> {
     }
 }
 
+/// A [`Vec`] mutable reference wrapper only allowing to push new stuff, but
+/// restricting everything else and that can be used to maintain some data
+/// structure invariants.
+///
+/// It also implements [`Write`], as a convenience.
+pub struct AppendOnlyView<'v, T> {
+    inner: &'v mut Vec<T>,
+}
+
+impl<'v, T> AppendOnlyView<'v, T> {
+    #[inline(always)]
+    pub(crate) fn new(inner: &'v mut Vec<T>) -> Self {
+        Self { inner }
+    }
+
+    #[inline(always)]
+    pub fn push(&mut self, value: T) {
+        self.inner.push(value);
+    }
+
+    #[inline(always)]
+    pub fn reserve(&mut self, additional: usize) {
+        self.inner.reserve(additional);
+    }
+
+    #[inline(always)]
+    pub fn reserve_exact(&mut self, additional: usize) {
+        self.inner.reserve_exact(additional);
+    }
+}
+
+impl<'v, T: Clone> AppendOnlyView<'v, T> {
+    #[inline(always)]
+    pub fn extend_from_slice(&mut self, other: &[T]) {
+        self.inner.extend_from_slice(other);
+    }
+}
+
+impl<'v, T> Extend<T> for AppendOnlyView<'v, T> {
+    #[inline(always)]
+    fn extend<I: IntoIterator<Item = T>>(&mut self, iter: I) {
+        self.inner.extend(iter);
+    }
+}
+
+impl<'v, T> Write for AppendOnlyView<'v, T>
+where
+    Vec<T>: Write,
+{
+    #[inline(always)]
+    fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
+        self.inner.write(buf)
+    }
+
+    #[inline(always)]
+    fn write_all(&mut self, buf: &[u8]) -> io::Result<()> {
+        self.inner.write_all(buf)
+    }
+
+    #[inline(always)]
+    fn write_vectored(&mut self, bufs: &[io::IoSlice<'_>]) -> io::Result<usize> {
+        self.inner.write_vectored(bufs)
+    }
+
+    #[inline(always)]
+    fn write_fmt(&mut self, fmt: std::fmt::Arguments<'_>) -> io::Result<()> {
+        self.inner.write_fmt(fmt)
+    }
+
+    #[inline(always)]
+    fn flush(&mut self) -> io::Result<()> {
+        self.inner.flush()
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn test_unquoted() {
+        assert_eq!(
+            unquoted(b"\"\"\"98469465\"\",\"", b'\"'),
+            Some(b"\"\"98469465\"\",".as_ref())
+        );
+    }
 
     #[test]
     fn test_unescape() {
@@ -178,6 +261,11 @@ mod tests {
         assert_eq!(
             unescape(b"goettigen\"whatever", b'"'),
             Cow::<[u8]>::Owned(b"goettigen\"whatever".to_vec())
+        );
+
+        assert_eq!(
+            unescape(b"\"\"98469465\"\",", b'\"'),
+            Cow::<[u8]>::Owned(b"\"98469465\",".to_vec())
         );
     }
 
