@@ -14,7 +14,7 @@ BINARIES=$(ls scripts/binaries/*.bin | paste -sd ,)
 FILES=(
     # articles.csv
     blogs.csv
-    crlf.csv
+    # crlf.csv
     mediapart.tsv
     ndjson-scam.csv
     numbers.csv
