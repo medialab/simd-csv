@@ -64,56 +64,55 @@ mod x86_64 {
     //     }
     // }
 
-    pub mod avx2 {
+    pub mod sse2 {
         use super::*;
 
         use core::arch::x86_64::{
-            __m256i, _mm256_cmpeq_epi8, _mm256_loadu_si256, _mm256_movemask_epi8, _mm256_or_si256,
-            _mm256_set1_epi8,
+            __m128i, _mm_cmpeq_epi8, _mm_loadu_si128, _mm_movemask_epi8, _mm_or_si128,
+            _mm_set1_epi8,
         };
 
-        const CHUNK_SIZE: usize = 32;
-        const DOUBLE_CHUNK_SIZE: usize = CHUNK_SIZE * 2;
+        const CHUNK_SIZE: usize = 16;
+        const QUAD_CHUNK_SIZE: usize = CHUNK_SIZE * 4;
 
         #[derive(Debug)]
-        pub struct AVX2Searcher {
+        pub struct SSE2Searcher {
             delimiter: u8,
             newline: u8,
-            delimiter_splat: __m256i,
-            newline_splat: __m256i,
+            delimiter_splat: __m128i,
+            newline_splat: __m128i,
         }
 
-        impl AVX2Searcher {
-            #[target_feature(enable = "avx2")]
+        impl SSE2Searcher {
+            #[target_feature(enable = "sse2")]
             pub unsafe fn new(delimiter: u8, newline: u8) -> Self {
                 Self {
                     delimiter,
                     newline,
-                    delimiter_splat: _mm256_set1_epi8(delimiter as i8),
-                    newline_splat: _mm256_set1_epi8(newline as i8),
+                    delimiter_splat: _mm_set1_epi8(delimiter as i8),
+                    newline_splat: _mm_set1_epi8(newline as i8),
                 }
             }
 
             #[inline(always)]
-            pub fn iter<'s, 'h>(&'s self, haystack: &'h [u8]) -> AVX2Indices<'s, 'h> {
-                AVX2Indices::new(self, haystack)
+            pub fn iter<'s, 'h>(&'s self, haystack: &'h [u8]) -> SSE2Indices<'s, 'h> {
+                SSE2Indices::new(self, haystack)
             }
         }
 
         #[derive(Debug)]
-        pub struct AVX2Indices<'s, 'h> {
-            searcher: &'s AVX2Searcher,
+        pub struct SSE2Indices<'s, 'h> {
+            searcher: &'s SSE2Searcher,
             haystack: PhantomData<&'h [u8]>,
             start: *const u8,
             end: *const u8,
             current: *const u8,
-            mask_start: *const u8,
             mask: u64,
         }
 
-        impl<'s, 'h> AVX2Indices<'s, 'h> {
+        impl<'s, 'h> SSE2Indices<'s, 'h> {
             #[inline]
-            fn new(searcher: &'s AVX2Searcher, haystack: &'h [u8]) -> Self {
+            fn new(searcher: &'s SSE2Searcher, haystack: &'h [u8]) -> Self {
                 let ptr = haystack.as_ptr();
 
                 Self {
@@ -122,14 +121,13 @@ mod x86_64 {
                     start: ptr,
                     end: ptr.wrapping_add(haystack.len()),
                     current: ptr,
-                    mask_start: ptr,
                     mask: 0,
                 }
             }
         }
 
-        impl AVX2Indices<'_, '_> {
-            #[target_feature(enable = "avx2")]
+        impl SSE2Indices<'_, '_> {
+            #[target_feature(enable = "sse2")]
             pub unsafe fn next(&mut self) -> Option<usize> {
                 if self.start >= self.end {
                     return None;
@@ -137,7 +135,6 @@ mod x86_64 {
 
                 let mut mask = self.mask;
                 let mut current = self.current;
-                let mut mask_start = self.mask_start;
                 let start = self.start;
                 let len = self.end.distance(start);
                 let delimiter_splat = self.searcher.delimiter_splat;
@@ -145,58 +142,48 @@ mod x86_64 {
 
                 'main: loop {
                     if mask != 0 {
-                        let offset = mask_start.add(first_offset(mask));
+                        let offset = current.sub(QUAD_CHUNK_SIZE).add(first_offset(mask));
                         self.mask = clear_least_significant_bit(mask);
                         self.current = current;
-                        self.mask_start = mask_start;
 
                         return Some(offset.distance(start));
                     }
 
-                    if len >= DOUBLE_CHUNK_SIZE {
-                        let vectorized_end = self.end.sub(DOUBLE_CHUNK_SIZE);
+                    if len >= QUAD_CHUNK_SIZE {
+                        let vectorized_end = self.end.sub(QUAD_CHUNK_SIZE);
 
                         while current <= vectorized_end {
-                            let first_chunk = _mm256_loadu_si256(current as *const __m256i);
+                            let first_chunk = _mm_loadu_si128(current as *const __m128i);
                             let second_chunk =
-                                _mm256_loadu_si256(current.add(CHUNK_SIZE) as *const __m256i);
+                                _mm_loadu_si128(current.add(CHUNK_SIZE) as *const __m128i);
+                            let third_chunk =
+                                _mm_loadu_si128(current.add(CHUNK_SIZE * 2) as *const __m128i);
+                            let fourth_chunk =
+                                _mm_loadu_si128(current.add(CHUNK_SIZE * 3) as *const __m128i);
 
-                            let first_delimiter_cmp =
-                                _mm256_cmpeq_epi8(first_chunk, delimiter_splat);
-                            let first_newline_cmp = _mm256_cmpeq_epi8(first_chunk, newline_splat);
-                            let first_cmp = _mm256_or_si256(first_delimiter_cmp, first_newline_cmp);
+                            let first_cmp = _mm_or_si128(
+                                _mm_cmpeq_epi8(first_chunk, delimiter_splat),
+                                _mm_cmpeq_epi8(first_chunk, newline_splat),
+                            );
+                            let second_cmp = _mm_or_si128(
+                                _mm_cmpeq_epi8(second_chunk, delimiter_splat),
+                                _mm_cmpeq_epi8(second_chunk, newline_splat),
+                            );
+                            let third_cmp = _mm_or_si128(
+                                _mm_cmpeq_epi8(third_chunk, delimiter_splat),
+                                _mm_cmpeq_epi8(third_chunk, newline_splat),
+                            );
+                            let fourth_cmp = _mm_or_si128(
+                                _mm_cmpeq_epi8(fourth_chunk, delimiter_splat),
+                                _mm_cmpeq_epi8(fourth_chunk, newline_splat),
+                            );
 
-                            let second_delimiter_cmp =
-                                _mm256_cmpeq_epi8(second_chunk, delimiter_splat);
-                            let second_newline_cmp = _mm256_cmpeq_epi8(second_chunk, newline_splat);
-                            let second_cmp =
-                                _mm256_or_si256(second_delimiter_cmp, second_newline_cmp);
+                            mask = (_mm_movemask_epi8(first_cmp) as u64)
+                                | ((_mm_movemask_epi8(second_cmp) as u64) << 16)
+                                | ((_mm_movemask_epi8(third_cmp) as u64) << 32)
+                                | ((_mm_movemask_epi8(fourth_cmp) as u64) << 48);
 
-                            let first_mask = _mm256_movemask_epi8(first_cmp) as u32;
-                            let second_mask = _mm256_movemask_epi8(second_cmp) as u32;
-                            mask = first_mask as u64 | ((second_mask as u64) << 32);
-
-                            mask_start = current;
-                            current = current.add(DOUBLE_CHUNK_SIZE);
-
-                            if mask != 0 {
-                                continue 'main;
-                            }
-                        }
-                    }
-
-                    if len >= CHUNK_SIZE {
-                        let vectorized_end = self.end.sub(CHUNK_SIZE);
-
-                        while current <= vectorized_end {
-                            let chunk = _mm256_loadu_si256(current as *const __m256i);
-                            let delimiter_cmp = _mm256_cmpeq_epi8(chunk, delimiter_splat);
-                            let newline_cmp = _mm256_cmpeq_epi8(chunk, newline_splat);
-                            let cmp = _mm256_or_si256(delimiter_cmp, newline_cmp);
-
-                            mask = _mm256_movemask_epi8(cmp) as u32 as u64;
-                            mask_start = current;
-                            current = current.add(CHUNK_SIZE);
+                            current = current.add(QUAD_CHUNK_SIZE);
 
                             if mask != 0 {
                                 continue 'main;
@@ -387,7 +374,7 @@ mod aarch64 {
 pub fn searcher_simd_instructions() -> &'static str {
     #[cfg(target_arch = "x86_64")]
     {
-        "avx2"
+        "sse2"
     }
 
     #[cfg(target_arch = "aarch64")]
@@ -407,7 +394,7 @@ pub fn searcher_simd_instructions() -> &'static str {
 #[derive(Debug)]
 pub struct Searcher {
     #[cfg(target_arch = "x86_64")]
-    inner: x86_64::avx2::AVX2Searcher,
+    inner: x86_64::sse2::SSE2Searcher,
 
     #[cfg(target_arch = "aarch64")]
     inner: aarch64::NeonSearcher,
@@ -423,7 +410,7 @@ impl Searcher {
         {
             unsafe {
                 Self {
-                    inner: x86_64::avx2::AVX2Searcher::new(delimiter, newline),
+                    inner: x86_64::sse2::SSE2Searcher::new(delimiter, newline),
                 }
             }
         }
@@ -481,7 +468,7 @@ impl Searcher {
 #[derive(Debug)]
 pub struct Indices<'s, 'h> {
     #[cfg(target_arch = "x86_64")]
-    inner: x86_64::avx2::AVX2Indices<'s, 'h>,
+    inner: x86_64::sse2::SSE2Indices<'s, 'h>,
 
     #[cfg(target_arch = "aarch64")]
     inner: aarch64::NeonIndices<'s, 'h>,
