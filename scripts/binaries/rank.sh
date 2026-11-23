@@ -6,4 +6,4 @@ xan separate command -rc 'data/(?<file>\S+)' | \
 xan separate parameter_bin -rc 'binaries/(?<bin>[^\.]+)\.bin' | \
 xan select file,bin,mean | \
 xan top -Rg file mean | \
-xan v -Ig file
+xan hist -f file -c bin -l bin -v mean
