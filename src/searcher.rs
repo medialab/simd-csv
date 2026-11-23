@@ -7,7 +7,7 @@ mod x86_64 {
     use crate::ext::Pointer;
 
     #[inline(always)]
-    fn get_for_offset(mask: u32) -> u32 {
+    fn get_for_offset(mask: u64) -> u64 {
         #[cfg(target_endian = "big")]
         {
             mask.swap_bytes()
@@ -19,12 +19,12 @@ mod x86_64 {
     }
 
     #[inline(always)]
-    fn first_offset(mask: u32) -> usize {
+    fn first_offset(mask: u64) -> usize {
         get_for_offset(mask).trailing_zeros() as usize
     }
 
     #[inline(always)]
-    fn clear_least_significant_bit(mask: u32) -> u32 {
+    fn clear_least_significant_bit(mask: u64) -> u64 {
         mask & (mask - 1)
     }
 
@@ -73,6 +73,8 @@ mod x86_64 {
         };
 
         const CHUNK_SIZE: usize = 16;
+        const CHUNKS_PER_MASK: usize = 4;
+        const MASK_SIZE: usize = CHUNK_SIZE * CHUNKS_PER_MASK;
         // const FULL_MASK: u32 = (1 << CHUNK_SIZE) - 1;
 
         #[derive(Debug)]
@@ -148,7 +150,7 @@ mod x86_64 {
             start: *const u8,
             end: *const u8,
             current: *const u8,
-            mask: u32,
+            mask: u64,
         }
 
         impl<'s, 'h> SSE2Indices<'s, 'h> {
@@ -185,7 +187,7 @@ mod x86_64 {
                 'main: loop {
                     // Processing current move mask
                     if mask != 0 {
-                        let offset = current.sub(CHUNK_SIZE).add(first_offset(mask));
+                        let offset = current.sub(MASK_SIZE).add(first_offset(mask));
                         self.mask = clear_least_significant_bit(mask);
                         self.current = current;
 
@@ -193,20 +195,52 @@ mod x86_64 {
                     }
 
                     // Main loop of unaligned loads
-                    if len >= CHUNK_SIZE {
-                        let vectorized_end = self.end.sub(CHUNK_SIZE);
+                    if len >= MASK_SIZE {
+                        let vectorized_end = self.end.sub(MASK_SIZE);
 
                         while current <= vectorized_end {
-                            let chunk = _mm_loadu_si128(current as *const __m128i);
-                            let cmp1 = _mm_cmpeq_epi8(chunk, delimiter_splat);
-                            let cmp2 = _mm_cmpeq_epi8(chunk, newline_splat);
-                            let cmp3 = _mm_cmpeq_epi8(chunk, quote_splat);
-                            let cmp = _mm_or_si128(cmp1, cmp2);
-                            let cmp = _mm_or_si128(cmp, cmp3);
+                            let chunk0 = _mm_loadu_si128(current as *const __m128i);
+                            let chunk1 = _mm_loadu_si128(current.add(CHUNK_SIZE) as *const __m128i);
+                            let chunk2 =
+                                _mm_loadu_si128(current.add(CHUNK_SIZE * 2) as *const __m128i);
+                            let chunk3 =
+                                _mm_loadu_si128(current.add(CHUNK_SIZE * 3) as *const __m128i);
 
-                            mask = _mm_movemask_epi8(cmp) as u32;
+                            let cmp0 = _mm_or_si128(
+                                _mm_or_si128(
+                                    _mm_cmpeq_epi8(chunk0, delimiter_splat),
+                                    _mm_cmpeq_epi8(chunk0, newline_splat),
+                                ),
+                                _mm_cmpeq_epi8(chunk0, quote_splat),
+                            );
+                            let cmp1 = _mm_or_si128(
+                                _mm_or_si128(
+                                    _mm_cmpeq_epi8(chunk1, delimiter_splat),
+                                    _mm_cmpeq_epi8(chunk1, newline_splat),
+                                ),
+                                _mm_cmpeq_epi8(chunk1, quote_splat),
+                            );
+                            let cmp2 = _mm_or_si128(
+                                _mm_or_si128(
+                                    _mm_cmpeq_epi8(chunk2, delimiter_splat),
+                                    _mm_cmpeq_epi8(chunk2, newline_splat),
+                                ),
+                                _mm_cmpeq_epi8(chunk2, quote_splat),
+                            );
+                            let cmp3 = _mm_or_si128(
+                                _mm_or_si128(
+                                    _mm_cmpeq_epi8(chunk3, delimiter_splat),
+                                    _mm_cmpeq_epi8(chunk3, newline_splat),
+                                ),
+                                _mm_cmpeq_epi8(chunk3, quote_splat),
+                            );
 
-                            current = current.add(CHUNK_SIZE);
+                            mask = (_mm_movemask_epi8(cmp0) as u64)
+                                | ((_mm_movemask_epi8(cmp1) as u64) << 16)
+                                | ((_mm_movemask_epi8(cmp2) as u64) << 32)
+                                | ((_mm_movemask_epi8(cmp3) as u64) << 48);
+
+                            current = current.add(MASK_SIZE);
 
                             if mask != 0 {
                                 continue 'main;
@@ -585,6 +619,14 @@ mod tests {
 
         // Exactly 64
         assert_eq!(split("b,".repeat(64).as_bytes()).len(), 64);
+
+        // One packed SSE2 mask: every chunk boundary and its final byte.
+        let mut packed = [b'x'; 64];
+        let packed_offsets = [0, 15, 16, 31, 32, 47, 48, 63];
+        for &offset in &packed_offsets {
+            packed[offset] = b',';
+        }
+        assert_eq!(split(&packed), packed_offsets);
 
         // Less than 32
         assert_eq!(split("b,".repeat(25).as_bytes()).len(), 25);
