@@ -250,7 +250,11 @@ impl<R: Read> ZeroCopyReader<R> {
                 }
                 Record => {
                     self.index += 1;
-                    self.check_field_count(byte, self.seps.len() + 1)?;
+
+                    if let Err(err) = self.check_field_count(byte, self.seps.len() + 1) {
+                        self.buffer.consume(pos);
+                        return Err(err);
+                    };
 
                     let bytes = self.buffer.flush(pos);
 
@@ -413,6 +417,27 @@ mod tests {
         // No headers, empty
         let mut reader = ZeroCopyReader::from_reader_no_headers(Cursor::new(b""));
         assert_eq!(reader.byte_headers()?, &brec![]);
+        assert!(reader.read_byte_record()?.is_none());
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_read_after_unequal_lengths() -> error::Result<()> {
+        let mut reader = ZeroCopyReader::from_reader(&b"a,b\nx\nc,d\n"[..]);
+
+        let err = reader.read_byte_record().unwrap_err();
+        assert!(matches!(
+            err.kind(),
+            ErrorKind::UnequalLengths {
+                expected_len: 2,
+                len: 1,
+                ..
+            }
+        ));
+
+        let next = reader.read_byte_record()?.expect("expected c,d after x");
+        assert_eq!(next.as_slice(), b"c,d");
         assert!(reader.read_byte_record()?.is_none());
 
         Ok(())

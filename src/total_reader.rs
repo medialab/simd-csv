@@ -144,7 +144,7 @@ impl<'b> TotalReader<'b> {
             };
         }
 
-        count.saturating_sub(if self.has_headers { 1 } else { 0 })
+        count
     }
 
     /// Attempt to split the next CSV record and return an optional reference to
@@ -297,6 +297,15 @@ mod tests {
             assert_eq!(count_records(test), 3, "string={:?}", test);
             assert_eq!(split_records(test), 3, "string={:?}", test);
         }
+
+        assert_eq!(TotalReader::from_bytes(b"header\nrow").count_records(), 1);
+        assert_eq!(
+            TotalReaderBuilder::new()
+                .has_headers(false)
+                .from_bytes(b"header\nrow")
+                .count_records(),
+            2
+        );
     }
 
     #[test]

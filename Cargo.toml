@@ -30,11 +30,13 @@ debug = true
 
 [features]
 default = []
+serde = ["dep:serde_core"]
 str = ["dep:simdutf8"]
 binary = []
 
 [dependencies]
 memchr = "2.8.3"
+serde_core = { version = "1", optional = true }
 simdutf8 = { version = "0.1.5", optional = true }
 
 [dev-dependencies]

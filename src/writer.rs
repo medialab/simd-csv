@@ -376,6 +376,9 @@ impl<W: Write> Writer<W> {
     /// **BEWARE**: if written data needed escaping, invalid CSV will be
     /// written!
     ///
+    /// **BEWARE**: the number of fields won't be validated by this method, even
+    /// if the writer is not flexible!
+    ///
     /// This method can typically be used with slices yielded by
     /// [`Splitter.split_record`](crate::Splitter::split_record).
     #[inline(always)]
@@ -482,26 +485,25 @@ impl<'a, W: Write> FieldsWriter<'a, W> {
     ) -> error::Result<()> {
         self.emit_delimiter()?;
 
-        // TODO: we probably need to deal with self.empty
+        self.written += record.len();
 
         if self.inner.delimiter == delimiter && record.quote == self.inner.quote {
-            self.inner.buf_writer.write_all(record.as_slice())?;
+            let slice = record.as_slice();
+
+            if slice.is_empty() {
+                self.empty = true;
+            } else {
+                self.inner.buf_writer.write_all(slice)?;
+            }
         } else {
             for cell in record.unescaped_iter() {
-                self.write_field(cell)?;
+                if cell.is_empty() {
+                    self.empty = true;
+                } else {
+                    self.write_field(cell)?;
+                }
             }
         }
-
-        Ok(())
-    }
-
-    #[inline]
-    pub fn write_splitted_record(&mut self, record: &[u8]) -> error::Result<()> {
-        self.emit_delimiter()?;
-
-        // TODO: we probably need to deal with self.empty
-
-        self.inner.buf_writer.write_all(record)?;
 
         Ok(())
     }
@@ -588,13 +590,18 @@ mod tests {
 
         fields_writer.write_field("name")?;
         fields_writer.write_field(b"surname")?;
-        fields_writer.write_splitted_record(b"age,color")?;
         fields_writer.finalize_record()?;
 
-        assert_eq!(
-            writer.into_inner().unwrap().into_inner(),
-            b"name,surname,age,color\n"
-        );
+        assert_eq!(writer.into_inner().unwrap().into_inner(), b"name,surname\n");
+
+        let mut writer = Writer::from_writer(Cursor::new(Vec::<u8>::new()));
+        let mut fields_writer = writer.fields_writer();
+
+        fields_writer
+            .write_zero_copy_byte_record(b',', &ZeroCopyByteRecord::new(b"", &mut vec![], b'"'))?;
+        fields_writer.finalize_record()?;
+
+        assert_eq!(writer.into_inner().unwrap().into_inner(), b"\"\"\n");
 
         Ok(())
     }
