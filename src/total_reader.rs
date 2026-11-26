@@ -1,6 +1,6 @@
 use crate::core::{CoreReader, ReadResult};
-use crate::records::{ByteRecord, ByteRecordBuilder};
-use crate::utils::trim_bom;
+use crate::records::{ByteRecord, ByteRecordBuilder, ZeroCopyByteRecord};
+use crate::utils::{trim_bom, trim_trailing_crlf};
 
 /// Builds a [`TotalReader`] with given configuration.
 pub struct TotalReaderBuilder {
@@ -60,6 +60,7 @@ impl TotalReaderBuilder {
             bytes,
             pos: 0,
             headers: ByteRecord::new(),
+            seps: Vec::new(),
             has_read: false,
             has_headers: self.has_headers,
         }
@@ -79,6 +80,7 @@ pub struct TotalReader<'b> {
     bytes: &'b [u8],
     pos: usize,
     headers: ByteRecord,
+    seps: Vec<usize>,
     has_read: bool,
     has_headers: bool,
 }
@@ -156,7 +158,7 @@ impl<'b> TotalReader<'b> {
 
         self.on_first_read();
 
-        let starting_pos = self.pos;
+        let mut starting_pos = self.pos;
 
         loop {
             let (result, pos) = self.inner.split_record(&self.bytes[self.pos..]);
@@ -165,8 +167,48 @@ impl<'b> TotalReader<'b> {
 
             match result {
                 End => return None,
-                InputEmpty | Cr | Lf => continue,
-                Record => return Some(&self.bytes[starting_pos..self.pos]),
+                InputEmpty => continue,
+                Cr | Lf => {
+                    starting_pos = self.pos;
+                }
+                Record => return Some(trim_trailing_crlf(&self.bytes[starting_pos..self.pos])),
+            }
+        }
+    }
+
+    /// Attempt to read the next CSV record in a zero-copy fashion.
+    ///
+    /// Returns `None` when the reader is fully consumed.
+    pub fn read_zero_copy_byte_record(&mut self) -> Option<ZeroCopyByteRecord<'_>> {
+        use ReadResult::*;
+
+        self.on_first_read();
+        self.seps.clear();
+
+        let mut starting_pos = self.pos;
+
+        loop {
+            let (result, pos) = self.inner.split_record_and_find_separators(
+                &self.bytes[self.pos..],
+                0,
+                &mut self.seps,
+            );
+
+            self.pos += pos;
+
+            match result {
+                End => return None,
+                InputEmpty => continue,
+                Cr | Lf => {
+                    starting_pos = self.pos;
+                }
+                Record => {
+                    return Some(ZeroCopyByteRecord::new(
+                        &self.bytes[starting_pos..self.pos],
+                        &self.seps,
+                        self.inner.quote,
+                    ));
+                }
             }
         }
     }
@@ -353,5 +395,52 @@ mod tests {
         let mut reader = TotalReader::from_bytes_no_headers(b"");
         assert_eq!(reader.byte_headers(), &brec![]);
         assert!(reader.byte_records().next().is_none());
+    }
+
+    #[test]
+    fn test_split_record() {
+        let mut reader = TotalReader::from_bytes_no_headers(
+            b"\r\nname,surname\n\"john\",\"landis, the \"\"everlasting\"\" bastard\"\r\n",
+        );
+
+        assert_eq!(reader.split_record(), Some(&b"name,surname"[..]));
+        assert_eq!(
+            reader.split_record(),
+            Some(&b"\"john\",\"landis, the \"\"everlasting\"\" bastard\""[..])
+        );
+        assert_eq!(reader.split_record(), None);
+    }
+
+    #[test]
+    fn test_read_zero_copy_byte_record() {
+        let data = b"name,surname,age\n\"john\",\"landis, the \"\"everlasting\"\" bastard\",45\n\nlucy,rose,\"67\"";
+
+        let mut reader = TotalReader::from_bytes(data);
+        assert_eq!(reader.byte_headers(), &brec!["name", "surname", "age"]);
+        assert_eq!(
+            reader.read_zero_copy_byte_record().unwrap().as_slice(),
+            b"\"john\",\"landis, the \"\"everlasting\"\" bastard\",45"
+        );
+
+        let mut reader = TotalReader::from_bytes_no_headers(data);
+
+        let mut records = Vec::new();
+
+        while let Some(record) = reader.read_zero_copy_byte_record() {
+            records.push(record.iter().map(|cell| cell.to_vec()).collect::<Vec<_>>());
+        }
+
+        assert_eq!(
+            records,
+            vec![
+                vec![b"name".to_vec(), b"surname".to_vec(), b"age".to_vec()],
+                vec![
+                    b"\"john\"".to_vec(),
+                    b"\"landis, the \"\"everlasting\"\" bastard\"".to_vec(),
+                    b"45".to_vec(),
+                ],
+                vec![b"lucy".to_vec(), b"rose".to_vec(), b"\"67\"".to_vec()],
+            ]
+        );
     }
 }
