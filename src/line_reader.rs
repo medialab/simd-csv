@@ -38,6 +38,8 @@ impl<R: Read> LineReader<R> {
 
     /// Consume the reader to count the number of lines as fast as possible.
     pub fn count_lines(&mut self) -> io::Result<u64> {
+        self.inner.reset();
+
         let mut count: u64 = 0;
         let mut current_is_empty = true;
 
@@ -247,6 +249,16 @@ mod tests {
                 *expected
             );
         }
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_count_lines() -> io::Result<()> {
+        let mut reader = LineReader::from_reader(&b"a\nb\n"[..]);
+
+        assert_eq!(reader.read_line()?.unwrap(), b"a");
+        assert_eq!(reader.count_lines()?, 1);
 
         Ok(())
     }
