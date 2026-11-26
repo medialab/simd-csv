@@ -875,11 +875,12 @@ impl fmt::Debug for OneSelector {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
 
     #[cfg(feature = "serde")]
     #[test]
     fn test_deserialize() {
+        use super::*;
+
         let string = "\"one,two\"";
         let selector: Selector = serde_json::from_str(string).unwrap();
 
