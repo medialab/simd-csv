@@ -20,7 +20,7 @@ use crate::error::{Error, ErrorKind};
 
 /// A parsed selector that can be applied on CSV headers to create a
 /// [`crate::Selection`].
-#[derive(Clone)]
+#[derive(Clone, PartialEq)]
 pub struct Selector {
     selectors: Vec<CompositeSelector>,
     invert: bool,
@@ -156,11 +156,31 @@ impl fmt::Debug for Selector {
     }
 }
 
-impl TryFrom<String> for Selector {
+impl TryFrom<&str> for Selector {
     type Error = Error;
 
-    fn try_from(value: String) -> Result<Self, Self::Error> {
+    fn try_from(value: &str) -> Result<Self, Self::Error> {
         value.parse()
+    }
+}
+
+#[cfg(feature = "serde")]
+mod serde {
+    use std::borrow::Cow;
+
+    use serde_core::{de::Error, Deserialize};
+
+    use super::*;
+
+    impl<'de> Deserialize<'de> for Selector {
+        fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+        where
+            D: serde_core::Deserializer<'de>,
+        {
+            let string = <Cow<str>>::deserialize(deserializer)?;
+
+            string.parse::<Self>().map_err(|e| D::Error::custom(&e))
+        }
     }
 }
 
@@ -340,7 +360,7 @@ impl SelectorParser {
     }
 }
 
-#[derive(Clone)]
+#[derive(Clone, PartialEq)]
 enum CompositeSelector {
     One(OneSelector),
     Range(OneSelector, OneSelector),
@@ -415,7 +435,7 @@ impl CompositeSelector {
     }
 }
 
-#[derive(Clone)]
+#[derive(Clone, PartialEq)]
 enum OneSelector {
     Start,
     End,
@@ -850,5 +870,36 @@ impl fmt::Debug for OneSelector {
                 Some(i) => write!(f, "IndexedName({}[{}])", s, i),
             },
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[cfg(feature = "serde")]
+    #[test]
+    fn test_deserialize() {
+        let string = "\"one,two\"";
+        let selector: Selector = serde_json::from_str(string).unwrap();
+
+        assert_eq!(
+            selector,
+            Selector {
+                selectors: vec![
+                    CompositeSelector::One(OneSelector::IndexedName(
+                        "one".to_string(),
+                        None,
+                        false
+                    )),
+                    CompositeSelector::One(OneSelector::IndexedName(
+                        "two".to_string(),
+                        None,
+                        false
+                    ))
+                ],
+                invert: false
+            }
+        );
     }
 }
