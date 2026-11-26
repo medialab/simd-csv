@@ -47,6 +47,10 @@ echo Mmap Copy
 $TIME $PROG mmap-copy $1 > /dev/null
 echo
 
+echo Mmap Zero Copy
+$TIME $PROG mmap-zero-copy $1 > /dev/null
+echo
+
 echo Lines
 $TIME $PROG lines $1 > /dev/null
 echo

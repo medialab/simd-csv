@@ -11,6 +11,7 @@ enum CountingMode {
     Split,
     Mmap,
     ZeroCopy,
+    MmapZeroCopy,
     Copy,
     #[cfg(feature = "str")]
     StringCopy,
@@ -202,6 +203,24 @@ fn main() -> anyhow::Result<()> {
             let mut count: u64 = 0;
 
             while reader.read_byte_record(&mut record) {
+                count += 1;
+            }
+
+            println!("{}", count);
+        }
+        CountingMode::MmapZeroCopy => {
+            let file = File::open(&args.path)?;
+
+            let map = unsafe { Mmap::map(&file).unwrap() };
+
+            let mut reader = simd_csv::TotalReaderBuilder::new()
+                .has_headers(false)
+                .delimiter(args.delimiter())
+                .from_bytes(&map);
+
+            let mut count: u64 = 0;
+
+            while reader.read_zero_copy_byte_record().is_some() {
                 count += 1;
             }
 
