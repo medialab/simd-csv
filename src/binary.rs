@@ -1,4 +1,4 @@
-use std::io::{self, BufWriter, IntoInnerError, Read, Write};
+use std::io::{self, BufReader, BufWriter, IntoInnerError, Read, Write};
 
 use crate::records::ByteRecord;
 
@@ -58,14 +58,14 @@ impl<W: Write> BinaryWriter<W> {
 }
 
 pub struct BinaryReader<R> {
-    inner: R,
+    inner: BufReader<R>,
     buffer: Vec<u8>,
 }
 
 impl<R: Read> BinaryReader<R> {
     pub fn from_reader(reader: R) -> Self {
         Self {
-            inner: reader,
+            inner: BufReader::new(reader),
             buffer: Vec::new(),
         }
     }
