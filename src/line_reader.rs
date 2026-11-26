@@ -130,9 +130,10 @@ impl<R: Read> LineReader<R> {
                     self.inner.consume(len);
                 }
                 Some(pos) => {
-                    buffer.extend_from_slice(trim_trailing_crlf(&input[..pos + 1]));
+                    buffer.extend_from_slice(&input[..=pos]);
                     self.inner.consume(pos + 1);
 
+                    buffer.truncate(trim_trailing_crlf(buffer).len());
                     return Ok(true);
                 }
             };
@@ -259,6 +260,24 @@ mod tests {
 
         assert_eq!(reader.read_line()?.unwrap(), b"a");
         assert_eq!(reader.count_lines()?, 1);
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_crlf_split_across_refills() -> io::Result<()> {
+        let mut reader = LineReader::with_capacity(2, &b"a\r\nbc\r\n"[..]);
+        let mut buffer = Vec::new();
+
+        assert!(reader.read_line_into(&mut buffer)?);
+        assert_eq!(buffer.as_slice(), b"a");
+
+        let mut lines = reader.lines();
+        assert_eq!(
+            lines.next().expect("expected second line")?.as_slice(),
+            b"bc"
+        );
+        assert!(lines.next().is_none());
 
         Ok(())
     }
