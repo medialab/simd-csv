@@ -336,6 +336,10 @@ impl<W: Write> Writer<W> {
     ///
     /// A [`ZeroCopyByteRecord`] keeps track of its quote, but not the delimiter so
     /// this one must be provided to the method.
+
+    // NOTE: since a `ZeroCopyByteRecord` can only be parsed and constructed privately
+    // by this crate, we don't have to check emptiness like with other method since
+    // a single empty column will already be correctly represented by `""`.
     #[inline]
     pub fn write_zero_copy_byte_record(
         &mut self,
