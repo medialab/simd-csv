@@ -445,11 +445,6 @@ impl<R: Read + Seek> Seeker<R> {
         let sample = &self.sample;
         let file_len = sample.stream_len;
 
-        // File is way too short
-        if self.sample.record_count < count as u64 {
-            return Ok(vec![(self.first_record_position(), file_len)]);
-        }
-
         let adjusted_file_len = file_len - self.first_record_position();
 
         // Adjusting chunks
@@ -459,6 +454,10 @@ impl<R: Read + Seek> Seeker<R> {
                     as usize,
             )
             .max(1);
+
+        if count == 1 {
+            return Ok(vec![(self.first_record_position(), file_len)]);
+        }
 
         let mut offsets = vec![self.first_record_position()];
 
