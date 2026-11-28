@@ -394,7 +394,7 @@ impl<W: Write> Writer<W> {
     }
 
     #[inline(always)]
-    pub fn fields_writer(&mut self) -> FieldsWriter<W> {
+    pub fn fields_writer(&mut self) -> FieldsWriter<'_, W> {
         FieldsWriter::new(self)
     }
 
